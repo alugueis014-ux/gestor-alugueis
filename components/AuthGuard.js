@@ -1,0 +1,3 @@
+"use client";
+import {useEffect,useState} from "react";import {useRouter} from "next/navigation";import {supabase} from "../lib/supabase";
+export default function AuthGuard({children}){const router=useRouter();const[pronto,setPronto]=useState(false);useEffect(()=>{supabase.auth.getSession().then(({data})=>{if(!data.session)router.replace("/login");else setPronto(true)});const{data:l}=supabase.auth.onAuthStateChange((_e,s)=>{if(!s)router.replace("/login")});return()=>l.subscription.unsubscribe()},[router]);return pronto?children:<div className="loading">Carregando...</div>}

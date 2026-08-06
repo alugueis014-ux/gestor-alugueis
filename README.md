@@ -165,3 +165,10 @@ Importante: os arquivos físicos do Supabase Storage, como PDFs e imagens,
 não entram no arquivo JSON. Apenas os registros dos anexos são exportados.
 
 Não é necessário executar novo SQL.
+
+## Cobrança por WhatsApp no Acompanhamento
+
+- O botão WhatsApp aparece somente para aluguéis com status **Atrasado**.
+- A mensagem é preenchida automaticamente com nome do inquilino, prédio, apartamento, valor, vencimento e dias de atraso.
+- O número cadastrado é normalizado para o formato brasileiro com código 55.
+- Caso não exista telefone cadastrado, o sistema mostra um aviso para editar o inquilino.

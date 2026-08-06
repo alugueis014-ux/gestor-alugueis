@@ -442,3 +442,12 @@ label{display:flex;flex-direction:column;gap:6px;font-weight:700}input,select,te
   color:#64748b;
   padding:22px!important;
 }
+
+.tracking-whatsapp{
+  border-color:#15803d;
+  color:#15803d;
+  font-weight:700;
+}
+.tracking-whatsapp:hover{
+  background:#dcfce7;
+}

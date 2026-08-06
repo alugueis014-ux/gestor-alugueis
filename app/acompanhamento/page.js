@@ -156,11 +156,33 @@ export default function Acompanhamento() {
   }
 
   function whatsapp(r) {
-    const tel=String(r.inquilino?.telefone||"").replace(/\D/g,"");
-    if (!tel) return alert("Este inquilino não possui telefone cadastrado.");
-    const numero=tel.startsWith("55")?tel:`55${tel}`;
-    const texto=`Olá ${r.inquilino?.nome}. Estou entrando em contato sobre o aluguel de ${mes.split("-").reverse().join("/")} do ${r.predio?.nome}, apartamento ${r.apartamento?.numero}, no valor de ${moeda(r.valor_previsto)}. O pagamento está ${r.statusExibido.toLowerCase()}.`;
-    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`,"_blank");
+    if (r.statusExibido !== "Atrasado") {
+      return alert("A cobrança por WhatsApp fica disponível somente para aluguéis atrasados.");
+    }
+
+    const tel = String(r.inquilino?.telefone || "").replace(/\D/g, "");
+    if (!tel) {
+      return alert("Este inquilino não possui telefone cadastrado. Edite o cadastro antes de enviar a cobrança.");
+    }
+
+    const numero = tel.startsWith("55") ? tel : `55${tel}`;
+    const vencimento = new Date(`${r.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR");
+    const nome = r.inquilino?.nome || "inquilino";
+    const predioNome = r.predio?.nome || "imóvel";
+    const apartamentoNumero = r.apartamento?.numero || "não informado";
+
+    const texto = [
+      `Olá, ${nome}.`,
+      "",
+      `Identificamos um aluguel em aberto no valor de ${moeda(r.valor_previsto)}, referente ao ${predioNome}, apartamento ${apartamentoNumero}.`,
+      `O vencimento ocorreu em ${vencimento} e o pagamento está com ${r.atraso} dia(s) de atraso.`,
+      "",
+      "Caso o pagamento já tenha sido realizado, por favor desconsidere esta mensagem e, se possível, envie o comprovante.",
+      "",
+      "Em caso de dúvida, entre em contato."
+    ].join("\n");
+
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, "_blank", "noopener,noreferrer");
   }
 
   function recibo(r) {
@@ -187,7 +209,7 @@ export default function Acompanhamento() {
     <div className="tracking-table-wrap"><table className="tracking-table"><thead><tr><th>Prédio</th><th>Apartamento</th><th>Inquilino</th><th>Telefone</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Dias em atraso</th><th>Ações</th></tr></thead><tbody>
       {carregando&&<tr><td colSpan="9" className="empty-row">Carregando...</td></tr>}
       {!carregando&&linhas.length===0&&<tr><td colSpan="9" className="empty-row">Nenhum aluguel encontrado para este mês.</td></tr>}
-      {linhas.map(r=><tr key={r.id}><td>{r.predio?.nome||"-"}</td><td>{r.apartamento?.numero||"-"}</td><td>{r.inquilino?.nome||"-"}</td><td>{r.inquilino?.telefone||"-"}</td><td>{new Date(`${r.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>{moeda(r.valor_previsto)}</td><td><span className={`tracking-status ${r.statusExibido.toLowerCase()}`}>{r.statusExibido}</span></td><td>{r.atraso?`${r.atraso} dia(s)`:"-"}</td><td><div className="tracking-actions">{r.statusExibido!=="Pago"&&<button className="primary" onClick={()=>abrirReceber(r)}>Receber</button>}<button className="secondary" onClick={()=>whatsapp(r)}>WhatsApp</button>{r.statusExibido==="Pago"&&<button className="secondary" onClick={()=>recibo(r)}>Recibo</button>}</div></td></tr>)}
+      {linhas.map(r=><tr key={r.id}><td>{r.predio?.nome||"-"}</td><td>{r.apartamento?.numero||"-"}</td><td>{r.inquilino?.nome||"-"}</td><td>{r.inquilino?.telefone||"-"}</td><td>{new Date(`${r.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>{moeda(r.valor_previsto)}</td><td><span className={`tracking-status ${r.statusExibido.toLowerCase()}`}>{r.statusExibido}</span></td><td>{r.atraso?`${r.atraso} dia(s)`:"-"}</td><td><div className="tracking-actions">{r.statusExibido!=="Pago"&&<button className="primary" onClick={()=>abrirReceber(r)}>Receber</button>}{r.statusExibido==="Atrasado"&&<button className="secondary tracking-whatsapp" onClick={()=>whatsapp(r)}>WhatsApp</button>}{r.statusExibido==="Pago"&&<button className="secondary" onClick={()=>recibo(r)}>Recibo</button>}</div></td></tr>)}
     </tbody></table></div>
     {modal&&<div className="tracking-modal-bg"><form className="tracking-modal" onSubmit={salvarPagamento}><div className="tracking-modal-head"><h3>Registrar pagamento</h3><button type="button" onClick={()=>setModal(null)}>×</button></div><div className="tracking-form-grid">
       <label>Valor recebido<input type="number" step="0.01" value={pagamento.valor_recebido} onChange={e=>setPagamento({...pagamento,valor_recebido:e.target.value})} required /></label>

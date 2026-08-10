@@ -16,45 +16,104 @@ export default function Dashboard() {
   const [predios, setPredios] = useState([]);
   const [apartamentos, setApartamentos] = useState([]);
   const [inquilinos, setInquilinos] = useState([]);
+  const [recebimentos, setRecebimentos] = useState([]);
   const [erro, setErro] = useState("");
 
-  useEffect(() => { carregar(); }, []);
+  useEffect(() => { carregar(); }, [mes]);
 
   async function carregar() {
     setErro("");
-    const [p, a, i] = await Promise.all([
+
+    const [p, a, i, r] = await Promise.all([
       supabase.from("predios").select("id,nome").order("nome"),
       supabase.from("apartamentos").select("id,predio_id,situacao"),
-      supabase.from("inquilinos").select("id,status")
+      supabase.from("inquilinos").select("id,status"),
+      supabase
+        .from("recebimentos")
+        .select(`
+          id,
+          valor_previsto,
+          valor_recebido,
+          status,
+          contratos(
+            id,
+            apartamentos(
+              id,
+              predio_id,
+              predios(id,nome)
+            )
+          )
+        `)
+        .eq("competencia", `${mes}-01`)
     ]);
 
-    const falha = p.error || a.error || i.error;
+    const falha = p.error || a.error || i.error || r.error;
     if (falha) setErro(falha.message);
+
     setPredios(p.data || []);
     setApartamentos(a.data || []);
     setInquilinos(i.data || []);
+    setRecebimentos(r.data || []);
   }
 
   const disponiveis = apartamentos.filter(a => a.situacao === "disponivel").length;
   const inquilinosAtivos = inquilinos.filter(i => i.status === "ativo").length;
 
-  const resumo = useMemo(() => predios.map(predio => ({
-    id: predio.id,
-    nome: predio.nome,
-    previsto: 0,
-    recebido: 0,
-    pendente: 0,
-    pagos: 0,
-    emAberto: 0
-  })), [predios]);
+  const resumo = useMemo(() => {
+    const porPredio = new Map(
+      predios.map(predio => [predio.id, {
+        id: predio.id,
+        nome: predio.nome,
+        previsto: 0,
+        recebido: 0,
+        pendente: 0,
+        pagos: 0,
+        emAberto: 0
+      }])
+    );
 
-  const totais = resumo.reduce((acc, item) => ({
+    for (const recebimento of recebimentos) {
+      if (recebimento.status === "cancelado") continue;
+
+      const predio = recebimento.contratos?.apartamentos?.predios;
+      const predioId = predio?.id || recebimento.contratos?.apartamentos?.predio_id;
+      if (!predioId) continue;
+
+      if (!porPredio.has(predioId)) {
+        porPredio.set(predioId, {
+          id: predioId,
+          nome: predio?.nome || "Prédio não identificado",
+          previsto: 0,
+          recebido: 0,
+          pendente: 0,
+          pagos: 0,
+          emAberto: 0
+        });
+      }
+
+      const item = porPredio.get(predioId);
+      const previsto = Number(recebimento.valor_previsto || 0);
+      const recebido = Number(recebimento.valor_recebido || 0);
+      const pendente = Math.max(0, previsto - recebido);
+
+      item.previsto += previsto;
+      item.recebido += recebido;
+      item.pendente += pendente;
+
+      if (recebimento.status === "pago") item.pagos += 1;
+      else item.emAberto += 1;
+    }
+
+    return Array.from(porPredio.values());
+  }, [predios, recebimentos]);
+
+  const totais = useMemo(() => resumo.reduce((acc, item) => ({
     previsto: acc.previsto + item.previsto,
     recebido: acc.recebido + item.recebido,
     pendente: acc.pendente + item.pendente,
     pagos: acc.pagos + item.pagos,
     emAberto: acc.emAberto + item.emAberto
-  }), { previsto: 0, recebido: 0, pendente: 0, pagos: 0, emAberto: 0 });
+  }), { previsto: 0, recebido: 0, pendente: 0, pagos: 0, emAberto: 0 }), [resumo]);
 
   return (
     <AuthGuard>
@@ -95,7 +154,7 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {resumo.length === 0 ? (
-                  <tr><td colSpan="6" className="empty-row">Nenhum recebimento gerado para este mês.</td></tr>
+                  <tr><td colSpan="6" className="empty-row">Nenhum prédio cadastrado.</td></tr>
                 ) : resumo.map(item => (
                   <tr key={item.id}>
                     <td>{item.nome}</td>

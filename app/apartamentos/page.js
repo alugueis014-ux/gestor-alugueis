@@ -24,10 +24,10 @@ export default function Apartamentos() {
     setErro("");
 
     const [p, a] = await Promise.all([
-      supabase.from("predios").select("id,nome").order("nome"),
+      supabase.from("predios").select("id,nome,endereco").order("nome"),
       supabase
         .from("apartamentos")
-        .select("*, predios(nome)")
+        .select("*, predios(nome,endereco)")
         .order("numero"),
     ]);
 
@@ -80,6 +80,7 @@ export default function Apartamentos() {
           predio: {
             id: apartamento.predio_id,
             nome: apartamento.predios?.nome || "Prédio não informado",
+            endereco: apartamento.predios?.endereco || "",
           },
           apartamentos: [],
         });
@@ -154,7 +155,14 @@ export default function Apartamentos() {
         <div style={{ display: "grid", gap: 18 }}>
           {apartamentosPorPredio.map(({ predio, apartamentos }) => (
             <div className="panel table-wrap" key={predio.id}>
-              <h3 style={{ margin: "0 0 14px", fontSize: 21 }}>{predio.nome}</h3>
+              <div style={{ marginBottom: 14 }}>
+                <h3 style={{ margin: 0, fontSize: 21 }}>{predio.nome}</h3>
+                {predio.endereco && (
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 14 }}>
+                    {predio.endereco}
+                  </div>
+                )}
+              </div>
 
               <table>
                 <thead>
@@ -169,7 +177,11 @@ export default function Apartamentos() {
                   {apartamentos.length > 0 ? (
                     apartamentos.map((a) => (
                       <tr key={a.id}>
-                        <td>{a.numero}</td>
+                        <td>
+                          {predio.endereco
+                            ? `${predio.endereco} - Apartamento ${a.numero}`
+                            : `Apartamento ${a.numero}`}
+                        </td>
                         <td>
                           <span className={`badge ${a.situacao}`}>{a.situacao}</span>
                         </td>

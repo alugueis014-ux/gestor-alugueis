@@ -408,6 +408,7 @@ export default function Inquilinos() {
                     <th>Apartamento</th>
                     <th>Inquilino</th>
                     <th>Telefone</th>
+                    <th>Aluguel</th>
                     <th>Status</th>
                     <th>Contrato</th>
                     <th>Ações</th>
@@ -426,6 +427,14 @@ export default function Inquilinos() {
                         )}
                       </td>
                       <td>{i.telefone || "-"}</td>
+                      <td>
+                        {contrato?.valor_aluguel != null
+                          ? Number(contrato.valor_aluguel).toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL"
+                            })
+                          : "-"}
+                      </td>
                       <td>
                         <span className={`badge ${i.status}`}>
                           {i.status === "ativo" ? "Ativo" : "Inativo"}

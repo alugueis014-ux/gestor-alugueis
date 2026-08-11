@@ -42,10 +42,10 @@ export default function Inquilinos() {
     const [inq, pre, apt] = await Promise.all([
       supabase
         .from("inquilinos")
-        .select("*, contratos(id, apartamento_id, valor_aluguel, dia_vencimento, data_inicio, data_fim, status, apartamentos(numero, predio_id, predios(nome)))")
+        .select("*, contratos(id, apartamento_id, valor_aluguel, dia_vencimento, data_inicio, data_fim, status, apartamentos(numero, predio_id, predios(nome,endereco)))")
         .order("nome"),
-      supabase.from("predios").select("id,nome").order("nome"),
-      supabase.from("apartamentos").select("id,predio_id,numero,situacao,predios(nome)").order("numero")
+      supabase.from("predios").select("id,nome,endereco").order("nome"),
+      supabase.from("apartamentos").select("id,predio_id,numero,situacao,predios(nome,endereco)").order("numero")
     ]);
 
     const falha = inq.error || pre.error || apt.error;
@@ -67,6 +67,41 @@ export default function Inquilinos() {
     const texto = [i.nome, i.cpf, i.telefone].join(" ").toLowerCase();
     return texto.includes(busca.toLowerCase());
   });
+
+  const inquilinosPorPredio = useMemo(() => {
+    const grupos = new Map();
+
+    predios.forEach((predio) => {
+      grupos.set(predio.id, { predio, inquilinos: [] });
+    });
+
+    filtrados.forEach((inquilino) => {
+      const contrato =
+        (inquilino.contratos || []).find(c => c.status === "ativo") ||
+        (inquilino.contratos || [])[0];
+
+      const predioId = contrato?.apartamentos?.predio_id || "sem-predio";
+      const predioNome =
+        contrato?.apartamentos?.predios?.nome || "Sem prédio informado";
+
+      if (!grupos.has(predioId)) {
+        grupos.set(predioId, {
+          predio: {
+            id: predioId,
+            nome: predioNome,
+            endereco: contrato?.apartamentos?.predios?.endereco || ""
+          },
+          inquilinos: []
+        });
+      }
+
+      grupos.get(predioId).inquilinos.push({ inquilino, contrato });
+    });
+
+    return Array.from(grupos.values()).filter(
+      grupo => grupo.inquilinos.length > 0
+    );
+  }, [predios, filtrados]);
 
   function abrirNovo() {
     setForm(formularioVazio);
@@ -329,62 +364,96 @@ export default function Inquilinos() {
 
         {erro && !modalAberto && <div className="error">{erro}</div>}
 
-        <div className="panel table-wrap tenant-table-panel">
-          <table>
-            <thead>
-              <tr>
-                <th>Nome</th><th>CPF</th><th>Telefone</th><th>Prédio</th>
-                <th>Apartamento</th><th>Status</th><th>Contrato</th><th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtrados.length === 0 && (
-                <tr>
-                  <td colSpan="8" className="empty-row">
-                    Nenhum inquilino cadastrado.
-                  </td>
-                </tr>
-              )}
+        <div style={{ display: "grid", gap: 18 }}>
+          {inquilinosPorPredio.length === 0 && (
+            <div className="panel table-wrap tenant-table-panel">
+              <div className="empty-row" style={{ padding: 18 }}>
+                Nenhum inquilino cadastrado.
+              </div>
+            </div>
+          )}
 
-              {filtrados.map(i => {
-                const contrato =
-                  (i.contratos || []).find(c => c.status === "ativo") ||
-                  (i.contratos || [])[0];
+          {inquilinosPorPredio.map(({ predio, inquilinos }) => (
+            <div className="panel table-wrap tenant-table-panel" key={predio.id}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 14,
+                  flexWrap: "wrap"
+                }}
+              >
+                <h3 style={{ margin: 0, fontSize: 21 }}>
+                  {predio.nome}{predio.endereco ? ` - ${predio.endereco}` : ""}
+                </h3>
+                <span
+                  style={{
+                    background: "#e8f1fb",
+                    color: "#174f7a",
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    fontSize: 13,
+                    fontWeight: 700
+                  }}
+                >
+                  {inquilinos.length} inquilino(s)
+                </span>
+              </div>
 
-                return (
-                  <tr key={i.id}>
-                    <td>{i.nome}</td>
-                    <td>{i.cpf || "-"}</td>
-                    <td>{i.telefone || "-"}</td>
-                    <td>{contrato?.apartamentos?.predios?.nome || "Não informado"}</td>
-                    <td>{contrato?.apartamentos?.numero || "Não informado"}</td>
-                    <td>
-                      <span className={`badge ${i.status}`}>
-                        {i.status === "ativo" ? "Ativo" : "Inativo"}
-                      </span>
-                    </td>
-                    <td>{contrato ? "Cadastrado" : "Sem contrato"}</td>
-                    <td>
-                      <div className="tenant-action-buttons">
-                        <button
-                          className="secondary"
-                          onClick={() => abrirEditar(i)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          className="secondary"
-                          onClick={() => alternar(i)}
-                        >
-                          {i.status === "ativo" ? "Desativar" : "Reativar"}
-                        </button>
-                      </div>
-                    </td>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Apartamento</th>
+                    <th>Inquilino</th>
+                    <th>Telefone</th>
+                    <th>Status</th>
+                    <th>Contrato</th>
+                    <th>Ações</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {inquilinos.map(({ inquilino: i, contrato }) => (
+                    <tr key={i.id}>
+                      <td>{contrato?.apartamentos?.numero || "Não informado"}</td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{i.nome}</div>
+                        {i.cpf && (
+                          <div style={{ color: "#64748b", fontSize: 13 }}>
+                            CPF: {i.cpf}
+                          </div>
+                        )}
+                      </td>
+                      <td>{i.telefone || "-"}</td>
+                      <td>
+                        <span className={`badge ${i.status}`}>
+                          {i.status === "ativo" ? "Ativo" : "Inativo"}
+                        </span>
+                      </td>
+                      <td>{contrato ? "Cadastrado" : "Sem contrato"}</td>
+                      <td>
+                        <div className="tenant-action-buttons">
+                          <button
+                            className="secondary"
+                            onClick={() => abrirEditar(i)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="secondary"
+                            onClick={() => alternar(i)}
+                          >
+                            {i.status === "ativo" ? "Desativar" : "Reativar"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
 
         {modalAberto && (

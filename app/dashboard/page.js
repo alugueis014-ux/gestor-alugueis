@@ -17,6 +17,7 @@ export default function Dashboard() {
   const [apartamentos, setApartamentos] = useState([]);
   const [inquilinos, setInquilinos] = useState([]);
   const [recebimentos, setRecebimentos] = useState([]);
+  const [atrasados, setAtrasados] = useState(0);
   const [erro, setErro] = useState("");
 
   useEffect(() => { carregar(); }, [mes]);
@@ -24,7 +25,11 @@ export default function Dashboard() {
   async function carregar() {
     setErro("");
 
-    const [p, a, i, r] = await Promise.all([
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const hojeIso = hoje.toISOString().slice(0, 10);
+
+    const [p, a, i, r, atraso] = await Promise.all([
       supabase.from("predios").select("id,nome").order("nome"),
       supabase.from("apartamentos").select("id,predio_id,situacao"),
       supabase.from("inquilinos").select("id,status"),
@@ -44,16 +49,23 @@ export default function Dashboard() {
             )
           )
         `)
-        .eq("competencia", `${mes}-01`)
+        .eq("competencia", `${mes}-01`),
+      supabase
+        .from("recebimentos")
+        .select("id,status,data_vencimento")
+        .lt("data_vencimento", hojeIso)
+        .neq("status", "pago")
+        .neq("status", "cancelado")
     ]);
 
-    const falha = p.error || a.error || i.error || r.error;
+    const falha = p.error || a.error || i.error || r.error || atraso.error;
     if (falha) setErro(falha.message);
 
     setPredios(p.data || []);
     setApartamentos(a.data || []);
     setInquilinos(i.data || []);
     setRecebimentos(r.data || []);
+    setAtrasados((atraso.data || []).length);
   }
 
   const disponiveis = apartamentos.filter(a => a.situacao === "disponivel").length;
@@ -137,6 +149,25 @@ export default function Dashboard() {
           <div className="dashboard-card"><span>Disponíveis</span><strong>{disponiveis}</strong></div>
           <div className="dashboard-card"><span>Inquilinos</span><strong>{inquilinosAtivos}</strong></div>
         </div>
+
+        <a
+          href="/acompanhamento"
+          style={{
+            display: "block",
+            margin: "18px 0",
+            padding: "16px 18px",
+            borderRadius: 12,
+            textDecoration: "none",
+            fontWeight: 700,
+            border: atrasados > 0 ? "1px solid #fecaca" : "1px solid #bbf7d0",
+            background: atrasados > 0 ? "#fef2f2" : "#f0fdf4",
+            color: atrasados > 0 ? "#b91c1c" : "#166534"
+          }}
+        >
+          {atrasados > 0
+            ? `⚠ Atenção: existem ${atrasados} aluguel(is) em atraso`
+            : "✓ Todos os aluguéis estão em dia"}
+        </a>
 
         <section className="monthly-summary">
           <h3>Resumo mensal por prédio</h3>

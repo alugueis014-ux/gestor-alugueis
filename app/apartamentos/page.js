@@ -156,12 +156,9 @@ export default function Apartamentos() {
           {apartamentosPorPredio.map(({ predio, apartamentos }) => (
             <div className="panel table-wrap" key={predio.id}>
               <div style={{ marginBottom: 14 }}>
-                <h3 style={{ margin: 0, fontSize: 21 }}>{predio.nome}</h3>
-                {predio.endereco && (
-                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 14 }}>
-                    {predio.endereco}
-                  </div>
-                )}
+                <h3 style={{ margin: 0, fontSize: 21 }}>
+                  {predio.nome}{predio.endereco ? ` - ${predio.endereco}` : ""}
+                </h3>
               </div>
 
               <table>
@@ -177,11 +174,7 @@ export default function Apartamentos() {
                   {apartamentos.length > 0 ? (
                     apartamentos.map((a) => (
                       <tr key={a.id}>
-                        <td>
-                          {predio.endereco
-                            ? `${predio.endereco} - Apartamento ${a.numero}`
-                            : `Apartamento ${a.numero}`}
-                        </td>
+                        <td>{`Apartamento ${a.numero}`}</td>
                         <td>
                           <span className={`badge ${a.situacao}`}>{a.situacao}</span>
                         </td>

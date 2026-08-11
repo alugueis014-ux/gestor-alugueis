@@ -45,11 +45,10 @@ export default function Disponiveis() {
     setCarregando(false);
   }
 
-  const totais = useMemo(() => ({
-    disponivel: apartamentos.filter(a => a.situacao === "disponivel").length,
-    reservado: apartamentos.filter(a => a.situacao === "reservado").length,
-    manutencao: apartamentos.filter(a => a.situacao === "manutencao").length
-  }), [apartamentos]);
+  const totalDisponivel = useMemo(
+    () => apartamentos.filter(a => a.situacao === "disponivel").length,
+    [apartamentos]
+  );
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -63,40 +62,73 @@ export default function Disponiveis() {
     });
   }, [apartamentos, predio, situacao, busca]);
 
+  const porPredio = useMemo(() => {
+    const grupos = new Map();
+
+    predios.forEach(p => {
+      grupos.set(p.id, { predio: p, apartamentos: [] });
+    });
+
+    filtrados.forEach(a => {
+      if (!grupos.has(a.predio_id)) {
+        grupos.set(a.predio_id, {
+          predio: {
+            id: a.predio_id,
+            nome: a.predios?.nome || "Prédio não informado"
+          },
+          apartamentos: []
+        });
+      }
+
+      grupos.get(a.predio_id).apartamentos.push(a);
+    });
+
+    return Array.from(grupos.values()).filter(g => g.apartamentos.length > 0);
+  }, [predios, filtrados]);
+
   return (
     <AuthGuard>
       <AppShell>
-        <div className="available-header">
-          <h2>Disponíveis para Aluguel</h2>
-          <p>Apartamentos livres e prontos para receber novo inquilino</p>
+        <div
+          className="available-header"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 20,
+            flexWrap: "wrap"
+          }}
+        >
+          <div>
+            <h2>Disponíveis para Aluguel</h2>
+            <p>Apartamentos livres e prontos para receber novo inquilino</p>
+          </div>
+
+          <div
+            className="available-card"
+            style={{
+              minWidth: 190,
+              margin: 0
+            }}
+          >
+            <span>Total disponível</span>
+            <strong>{totalDisponivel}</strong>
+          </div>
         </div>
 
         {erro && <div className="error">{erro}</div>}
 
-        <div className="available-cards">
-          <div className="available-card">
-            <span>Total disponível</span>
-            <strong>{totais.disponivel}</strong>
-          </div>
-          <div className="available-card">
-            <span>Reservados</span>
-            <strong>{totais.reservado}</strong>
-          </div>
-          <div className="available-card">
-            <span>Em manutenção</span>
-            <strong>{totais.manutencao}</strong>
-          </div>
-        </div>
-
         <div className="available-filters">
           <select value={predio} onChange={e => setPredio(e.target.value)}>
             <option value="">Todos os prédios</option>
-            {predios.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            {predios.map(p => (
+              <option key={p.id} value={p.id}>{p.nome}</option>
+            ))}
           </select>
 
           <select value={situacao} onChange={e => setSituacao(e.target.value)}>
-            <option value="">Todas as situações</option>
             <option value="disponivel">Disponíveis</option>
+            <option value="">Todas as situações</option>
             <option value="reservado">Reservados</option>
             <option value="manutencao">Em manutenção</option>
           </select>
@@ -110,20 +142,97 @@ export default function Disponiveis() {
 
         {carregando ? (
           <div className="available-empty">Carregando apartamentos...</div>
-        ) : filtrados.length === 0 ? (
-          <div className="available-empty">Nenhum apartamento encontrado com os filtros selecionados.</div>
+        ) : porPredio.length === 0 ? (
+          <div className="available-empty">
+            Nenhum apartamento encontrado com os filtros selecionados.
+          </div>
         ) : (
-          <div className="available-list">
-            {filtrados.map(a => (
-              <article className="available-unit" key={a.id}>
-                <div>
-                  <span className={`status-pill ${a.situacao}`}>{rotulos[a.situacao] || a.situacao}</span>
-                  <h3>Apartamento {a.numero}</h3>
-                  <p>{a.predios?.nome || "Prédio não informado"}</p>
-                  {a.observacoes && <small>{a.observacoes}</small>}
+          <div style={{ display: "grid", gap: 18 }}>
+            {porPredio.map(({ predio: p, apartamentos: unidades }) => (
+              <section
+                className="panel"
+                key={p.id}
+                style={{
+                  padding: 0,
+                  overflow: "hidden"
+                }}
+              >
+                <div
+                  style={{
+                    padding: "18px 20px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 14,
+                    flexWrap: "wrap",
+                    borderBottom: "1px solid #dbe5ef"
+                  }}
+                >
+                  <h3 style={{ margin: 0, fontSize: 21 }}>{p.nome}</h3>
+
+                  <span
+                    style={{
+                      background: "#e7f0ff",
+                      color: "#1456a0",
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      fontSize: 13,
+                      fontWeight: 700
+                    }}
+                  >
+                    {unidades.length} disponível(is)
+                  </span>
                 </div>
-                <a className="primary available-action" href="/inquilinos">Cadastrar inquilino</a>
-              </article>
+
+                <div
+                  style={{
+                    padding: 16,
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: 14
+                  }}
+                >
+                  {unidades.map(a => (
+                    <article
+                      className="available-unit"
+                      key={a.id}
+                      style={{
+                        margin: 0,
+                        minWidth: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "stretch",
+                        justifyContent: "space-between",
+                        gap: 14,
+                        minHeight: 150
+                      }}
+                    >
+                      <div>
+                        <span className={`status-pill ${a.situacao}`}>
+                          {rotulos[a.situacao] || a.situacao}
+                        </span>
+                        <h3>Apartamento {a.numero}</h3>
+                        {a.observacoes && <small>{a.observacoes}</small>}
+                      </div>
+
+                      <a
+                        className="primary available-action"
+                        href="/inquilinos"
+                        style={{
+                          width: 180,
+                          maxWidth: "100%",
+                          boxSizing: "border-box",
+                          textAlign: "center",
+                          whiteSpace: "nowrap",
+                          alignSelf: "flex-start"
+                        }}
+                      >
+                        Cadastrar inquilino
+                      </a>
+                    </article>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}

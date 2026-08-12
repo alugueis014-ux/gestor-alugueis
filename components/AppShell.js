@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { supabase } from "../lib/supabase";
 
 const links = [
   ["/dashboard", "Dashboard"],
@@ -12,6 +13,7 @@ const links = [
   ["/contratos", "Contratos"],
   ["/acompanhamento", "Acompanhamento"],
   ["/recebimentos", "Recebimentos"],
+  ["/controle-mensal", "Controle Mensal"],
   ["/relatorios", "Relatórios"],
   ["/backup", "Backup"]
 ];
@@ -20,13 +22,31 @@ const futuros = [];
 
 export default function AppShell({ children }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+    } finally {
+      router.replace("/login");
+      router.refresh();
+    }
+  }
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <h1>Gestão de<br />Aluguéis</h1>
-          <p>Residencial Armando de<br />Gino</p>
+          <h1>
+            Gestão de
+            <br />
+            Aluguéis
+          </h1>
+          <p>
+            Residencial Armando de
+            <br />
+            Gino
+          </p>
         </div>
 
         <nav>
@@ -39,9 +59,23 @@ export default function AppShell({ children }) {
               {label}
             </Link>
           ))}
-          {futuros.map(label => <div className="menu-futuro" key={label}>{label}</div>)}
+
+          {futuros.map((label) => (
+            <div className="menu-futuro" key={label}>
+              {label}
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="logout-button"
+          >
+            Sair
+          </button>
         </nav>
       </aside>
+
       <main className="content">{children}</main>
     </div>
   );

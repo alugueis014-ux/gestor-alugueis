@@ -246,6 +246,23 @@ export default function Inquilinos() {
             .eq("id", contratoEditandoId);
 
           if (error) throw error;
+
+          // Ao alterar o valor do contrato, atualiza somente cobranças
+          // ainda não pagas do mês atual em diante.
+          const hoje = new Date();
+          const competenciaAtual = `${hoje.getFullYear()}-${String(
+            hoje.getMonth() + 1
+          ).padStart(2, "0")}-01`;
+
+          const { error: recebimentosError } = await supabase
+            .from("recebimentos")
+            .update({ valor_previsto: Number(form.valor_aluguel) })
+            .eq("contrato_id", contratoEditandoId)
+            .gte("competencia", competenciaAtual)
+            .neq("status", "pago")
+            .neq("status", "cancelado");
+
+          if (recebimentosError) throw recebimentosError;
         } else {
           const { data, error } = await supabase
             .from("contratos")

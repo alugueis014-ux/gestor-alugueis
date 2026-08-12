@@ -541,7 +541,7 @@ export default function Inquilinos() {
                     >
                       <option value="">Não informado</option>
                       {predios.map(p => (
-                        <option key={p.id} value={p.id}>{p.nome}</option>
+                        <option key={p.id} value={p.id}>{p.nome}{p.endereco ? ` — ${p.endereco}` : ""}</option>
                       ))}
                     </select>
                   </label>

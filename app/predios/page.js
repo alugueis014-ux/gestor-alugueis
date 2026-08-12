@@ -20,6 +20,7 @@ export default function Predios() {
   const [modalAberto, setModalAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [predioApartamentos, setPredioApartamentos] = useState(null);
+  const [apartamentosDoPredio, setApartamentosDoPredio] = useState([]);
   const [novosApartamentos, setNovosApartamentos] = useState([""]);
   const [salvandoApartamentos, setSalvandoApartamentos] = useState(false);
 
@@ -163,10 +164,24 @@ export default function Predios() {
     }
   }
 
-  function abrirCadastroApartamentos(predio) {
+  async function abrirCadastroApartamentos(predio) {
     setPredioApartamentos(predio);
     setNovosApartamentos([""]);
+    setApartamentosDoPredio([]);
     setErro("");
+
+    const { data, error } = await supabase
+      .from("apartamentos")
+      .select("id,predio_id,numero,situacao,observacoes")
+      .eq("predio_id", predio.id)
+      .order("numero");
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
+    setApartamentosDoPredio(data || []);
   }
 
   function alterarNovoApartamento(index, valor) {
@@ -186,6 +201,34 @@ export default function Predios() {
     });
   }
 
+  function alterarApartamentoExistente(id, campo, valor) {
+    setApartamentosDoPredio((lista) =>
+      lista.map((apartamento) =>
+        apartamento.id === id
+          ? { ...apartamento, [campo]: valor }
+          : apartamento
+      )
+    );
+  }
+
+  async function excluirApartamentoExistente(apartamento) {
+    if (!confirm(`Excluir o apartamento ${apartamento.numero}?`)) return;
+
+    const { error } = await supabase
+      .from("apartamentos")
+      .delete()
+      .eq("id", apartamento.id);
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
+    setApartamentosDoPredio((lista) =>
+      lista.filter((item) => item.id !== apartamento.id)
+    );
+  }
+
   async function salvarApartamentosExistentes(e) {
     e.preventDefault();
     if (!predioApartamentos) return;
@@ -199,32 +242,51 @@ export default function Predios() {
         throw new Error("Sessão inválida. Entre novamente no sistema.");
       }
 
+      // Atualiza os apartamentos já cadastrados.
+      for (const apartamento of apartamentosDoPredio) {
+        const numero = String(apartamento.numero || "").trim();
+        if (!numero) {
+          throw new Error("Todos os apartamentos cadastrados precisam ter um número.");
+        }
+
+        const { error: updateError } = await supabase
+          .from("apartamentos")
+          .update({
+            numero,
+            situacao: apartamento.situacao || "disponivel",
+            observacoes: apartamento.observacoes?.trim() || null
+          })
+          .eq("id", apartamento.id);
+
+        if (updateError) throw updateError;
+      }
+
+      // Cadastra os novos apartamentos informados no final da janela.
       const apartamentosValidos = novosApartamentos
         .map((numero) => numero.trim())
         .filter(Boolean);
 
-      if (!apartamentosValidos.length) {
-        throw new Error("Informe pelo menos um apartamento.");
+      if (apartamentosValidos.length > 0) {
+        const registros = apartamentosValidos.map((numero) => ({
+          proprietario_id: u.user.id,
+          predio_id: predioApartamentos.id,
+          numero,
+          situacao: "disponivel",
+          observacoes: null
+        }));
+
+        const { error: insertError } = await supabase
+          .from("apartamentos")
+          .insert(registros);
+
+        if (insertError) throw insertError;
       }
 
-      const registros = apartamentosValidos.map((numero) => ({
-        proprietario_id: u.user.id,
-        predio_id: predioApartamentos.id,
-        numero,
-        situacao: "disponivel",
-        observacoes: null
-      }));
-
-      const { error } = await supabase
-        .from("apartamentos")
-        .insert(registros);
-
-      if (error) throw error;
-
       setPredioApartamentos(null);
+      setApartamentosDoPredio([]);
       setNovosApartamentos([""]);
     } catch (e) {
-      setErro(e.message || "Não foi possível cadastrar os apartamentos.");
+      setErro(e.message || "Não foi possível salvar os apartamentos.");
     } finally {
       setSalvandoApartamentos(false);
     }
@@ -286,7 +348,7 @@ export default function Predios() {
                       className="secondary"
                       onClick={() => abrirCadastroApartamentos(p)}
                     >
-                      Cadastrar apartamentos
+                      Gerenciar apartamentos
                     </button>{" "}
                     <button className="secondary" onClick={() => editar(p)}>
                       Editar
@@ -455,10 +517,14 @@ export default function Predios() {
               }
             }}
           >
-            <form className="tenant-modal" onSubmit={salvarApartamentosExistentes}>
+            <form
+              className="tenant-modal"
+              onSubmit={salvarApartamentosExistentes}
+              style={{ maxWidth: 900 }}
+            >
               <div className="tenant-modal-title">
                 <div>
-                  <h3 style={{ marginBottom: 4 }}>Cadastrar apartamentos</h3>
+                  <h3 style={{ marginBottom: 4 }}>Gerenciar apartamentos</h3>
                   <div style={{ color: "#64748b", fontSize: 14 }}>
                     {predioApartamentos.nome}
                     {predioApartamentos.endereco
@@ -477,65 +543,148 @@ export default function Predios() {
               </div>
 
               <div className="tenant-modal-body">
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    marginBottom: 12
-                  }}
-                >
-                  <strong>Apartamentos</strong>
+                <div style={{ marginBottom: 20 }}>
+                  <strong style={{ display: "block", marginBottom: 10 }}>
+                    Apartamentos já cadastrados
+                  </strong>
 
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={adicionarNovoApartamento}
-                  >
-                    + Adicionar apartamento
-                  </button>
-                </div>
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  {novosApartamentos.map((numero, index) => (
-                    <div
-                      key={index}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr auto",
-                        gap: 8,
-                        alignItems: "center"
-                      }}
-                    >
-                      <input
-                        placeholder={`Apartamento ${index + 1} (ex.: 101)`}
-                        value={numero}
-                        onChange={(e) =>
-                          alterarNovoApartamento(index, e.target.value)
-                        }
-                      />
-
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => removerNovoApartamento(index)}
-                        disabled={novosApartamentos.length === 1}
-                      >
-                        Remover
-                      </button>
+                  {apartamentosDoPredio.length === 0 ? (
+                    <div style={{ color: "#64748b", fontSize: 14 }}>
+                      Nenhum apartamento cadastrado neste prédio.
                     </div>
-                  ))}
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {apartamentosDoPredio.map((apartamento) => (
+                        <div
+                          key={apartamento.id}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "140px 180px 1fr auto",
+                            gap: 8,
+                            alignItems: "center"
+                          }}
+                        >
+                          <input
+                            value={apartamento.numero || ""}
+                            placeholder="Apartamento"
+                            onChange={(e) =>
+                              alterarApartamentoExistente(
+                                apartamento.id,
+                                "numero",
+                                e.target.value
+                              )
+                            }
+                          />
+
+                          <select
+                            value={apartamento.situacao || "disponivel"}
+                            onChange={(e) =>
+                              alterarApartamentoExistente(
+                                apartamento.id,
+                                "situacao",
+                                e.target.value
+                              )
+                            }
+                          >
+                            <option value="disponivel">Disponível</option>
+                            <option value="ocupado">Ocupado</option>
+                            <option value="reservado">Reservado</option>
+                            <option value="manutencao">Manutenção</option>
+                          </select>
+
+                          <input
+                            value={apartamento.observacoes || ""}
+                            placeholder="Observações"
+                            onChange={(e) =>
+                              alterarApartamentoExistente(
+                                apartamento.id,
+                                "observacoes",
+                                e.target.value
+                              )
+                            }
+                          />
+
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() =>
+                              excluirApartamentoExistente(apartamento)
+                            }
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div
                   style={{
-                    marginTop: 10,
-                    color: "#64748b",
-                    fontSize: 13
+                    borderTop: "1px solid #e2e8f0",
+                    paddingTop: 18
                   }}
                 >
-                  Os novos apartamentos serão cadastrados como disponíveis.
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      marginBottom: 12
+                    }}
+                  >
+                    <strong>Adicionar novos apartamentos</strong>
+
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={adicionarNovoApartamento}
+                    >
+                      + Adicionar apartamento
+                    </button>
+                  </div>
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {novosApartamentos.map((numero, index) => (
+                      <div
+                        key={index}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto",
+                          gap: 8,
+                          alignItems: "center"
+                        }}
+                      >
+                        <input
+                          placeholder={`Novo apartamento ${index + 1} (ex.: 101)`}
+                          value={numero}
+                          onChange={(e) =>
+                            alterarNovoApartamento(index, e.target.value)
+                          }
+                        />
+
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => removerNovoApartamento(index)}
+                          disabled={novosApartamentos.length === 1}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 10,
+                      color: "#64748b",
+                      fontSize: 13
+                    }}
+                  >
+                    Os novos apartamentos serão cadastrados como disponíveis.
+                  </div>
                 </div>
 
                 {erro && (
@@ -556,7 +705,7 @@ export default function Predios() {
                 <button className="primary" disabled={salvandoApartamentos}>
                   {salvandoApartamentos
                     ? "Salvando..."
-                    : "Salvar apartamentos"}
+                    : "Salvar alterações"}
                 </button>
               </div>
             </form>

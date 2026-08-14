@@ -55,7 +55,7 @@ export default function Acompanhamento() {
       if (authError || !auth.user) throw new Error("Sessão inválida.");
 
       const [p, c] = await Promise.all([
-        supabase.from("predios").select("id,nome").order("nome"),
+        supabase.from("predios").select("id,nome,endereco").order("nome"),
         supabase.from("contratos").select("id,proprietario_id,valor_aluguel,dia_vencimento,data_inicio,data_fim,status").eq("status","ativo")
       ]);
       if (p.error) throw p.error;
@@ -126,6 +126,27 @@ export default function Acompanhamento() {
     return ordem[a.statusExibido]-ordem[b.statusExibido] || b.atraso-a.atraso || String(a.predio?.nome).localeCompare(String(b.predio?.nome));
   }), [recebimentos,predio,status,busca]);
 
+  const grupos = useMemo(() => {
+    const mapa = new Map();
+
+    linhas.forEach(r => {
+      const id = r.predio?.id || "sem-predio";
+      if (!mapa.has(id)) {
+        mapa.set(id, {
+          id,
+          nome: r.predio?.nome || "Sem prédio",
+          endereco: r.predio?.endereco || "",
+          linhas: []
+        });
+      }
+      mapa.get(id).linhas.push(r);
+    });
+
+    return Array.from(mapa.values()).sort((a,b) =>
+      a.nome.localeCompare(b.nome, "pt-BR")
+    );
+  }, [linhas]);
+
   const pagos = linhas.filter(x => x.statusExibido === "Pago").length;
   const pendentes = linhas.filter(x => x.statusExibido === "Pendente").length;
   const atrasados = linhas.filter(x => x.statusExibido === "Atrasado").length;
@@ -195,7 +216,7 @@ export default function Acompanhamento() {
   return <AuthGuard><AppShell>
     <div className="tracking-header"><h2>Acompanhamento de Aluguéis</h2><input type="month" value={mes} onChange={e=>setMes(e.target.value)} /></div>
     <div className="tracking-filters">
-      <select value={predio} onChange={e=>setPredio(e.target.value)}><option value="">Todos os prédios</option>{predios.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select>
+      <select value={predio} onChange={e=>setPredio(e.target.value)}><option value="">Todos os prédios</option>{predios.map(p=><option key={p.id} value={p.id}>{p.nome}{p.endereco ? ` — ${p.endereco}` : ""}</option>)}</select>
       <select value={status} onChange={e=>setStatus(e.target.value)}><option value="">Todos os status</option><option>Pago</option><option>Pendente</option><option>Atrasado</option></select>
       <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar inquilino ou apartamento" />
     </div>
@@ -206,11 +227,57 @@ export default function Acompanhamento() {
       <div><span>Atrasados</span><strong>{atrasados}</strong></div>
     </div>
     {erro&&<div className="error">{erro}</div>}
-    <div className="tracking-table-wrap"><table className="tracking-table"><thead><tr><th>Prédio</th><th>Apartamento</th><th>Inquilino</th><th>Telefone</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Dias em atraso</th><th>Ações</th></tr></thead><tbody>
-      {carregando&&<tr><td colSpan="9" className="empty-row">Carregando...</td></tr>}
-      {!carregando&&linhas.length===0&&<tr><td colSpan="9" className="empty-row">Nenhum aluguel encontrado para este mês.</td></tr>}
-      {linhas.map(r=><tr key={r.id}><td>{r.predio?.nome||"-"}</td><td>{r.apartamento?.numero||"-"}</td><td>{r.inquilino?.nome||"-"}</td><td>{r.inquilino?.telefone||"-"}</td><td>{new Date(`${r.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>{moeda(r.valor_previsto)}</td><td><span className={`tracking-status ${r.statusExibido.toLowerCase()}`}>{r.statusExibido}</span></td><td>{r.atraso?`${r.atraso} dia(s)`:"-"}</td><td><div className="tracking-actions">{r.statusExibido!=="Pago"&&<button className="primary" onClick={()=>abrirReceber(r)}>Receber</button>}{r.statusExibido==="Atrasado"&&<button className="secondary tracking-whatsapp" onClick={()=>whatsapp(r)}>WhatsApp</button>}{r.statusExibido==="Pago"&&<button className="secondary" onClick={()=>recibo(r)}>Recibo</button>}</div></td></tr>)}
-    </tbody></table></div>
+    {carregando&&<div className="tracking-table-wrap"><div className="empty-row">Carregando...</div></div>}
+    {!carregando&&linhas.length===0&&<div className="tracking-table-wrap"><div className="empty-row">Nenhum aluguel encontrado para este mês.</div></div>}
+    {!carregando&&linhas.length>0&&<div className="tracking-buildings">
+      {grupos.map(grupo=><section className="tracking-building" key={grupo.id}>
+        <div className="tracking-building-head">
+          <h3>{grupo.nome}</h3>
+          {grupo.endereco&&<p>{grupo.endereco}</p>}
+        </div>
+        <div className="tracking-table-wrap"><table className="tracking-table"><thead><tr><th>Apartamento</th><th>Inquilino</th><th>Telefone</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Dias em atraso</th><th>Ações</th></tr></thead><tbody>
+          {grupo.linhas.map(r=><tr key={r.id}><td>{r.apartamento?.numero||"-"}</td><td>{r.inquilino?.nome||"-"}</td><td>{r.inquilino?.telefone||"-"}</td><td>{new Date(`${r.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>{moeda(r.valor_previsto)}</td><td><span className={`tracking-status ${r.statusExibido.toLowerCase()}`}>{r.statusExibido}</span></td><td>{r.atraso?`${r.atraso} dia(s)`:"-"}</td><td><div className="tracking-actions">{r.statusExibido!=="Pago"&&<button className="primary" onClick={()=>abrirReceber(r)}>Receber</button>}{r.statusExibido==="Atrasado"&&<button className="secondary tracking-whatsapp" onClick={()=>whatsapp(r)}>WhatsApp</button>}{r.statusExibido==="Pago"&&<button className="secondary" onClick={()=>recibo(r)}>Recibo</button>}</div></td></tr>)}
+        </tbody></table></div>
+      </section>)}
+    </div>}
+    <style jsx>{`
+      .tracking-buildings{display:grid;gap:18px}
+      .tracking-building{background:#fff;border:1px solid #dbe3ee;border-radius:12px;overflow:hidden}
+      .tracking-building-head{padding:14px 16px 10px;border-bottom:1px solid #e5eaf1}
+      .tracking-building-head h3{margin:0;font-size:18px}
+      .tracking-building-head p{margin:4px 0 0;color:#64748b;font-size:13px}
+      .tracking-building .tracking-table-wrap{margin:0;border:0;border-radius:0;overflow-x:auto}
+      .tracking-building .tracking-table{width:100%;min-width:1180px;table-layout:fixed}
+      .tracking-building .tracking-table th,
+      .tracking-building .tracking-table td{
+        box-sizing:border-box;
+        vertical-align:middle;
+        overflow:hidden;
+        text-overflow:ellipsis;
+      }
+      .tracking-building .tracking-table th:nth-child(1),
+      .tracking-building .tracking-table td:nth-child(1){width:15%}
+      .tracking-building .tracking-table th:nth-child(2),
+      .tracking-building .tracking-table td:nth-child(2){
+        width:25%;
+        white-space:normal;
+        overflow-wrap:anywhere;
+        word-break:normal;
+        line-height:1.35;
+      }
+      .tracking-building .tracking-table th:nth-child(3),
+      .tracking-building .tracking-table td:nth-child(3){width:14%;white-space:nowrap}
+      .tracking-building .tracking-table th:nth-child(4),
+      .tracking-building .tracking-table td:nth-child(4){width:12%;white-space:nowrap}
+      .tracking-building .tracking-table th:nth-child(5),
+      .tracking-building .tracking-table td:nth-child(5){width:10%;white-space:nowrap}
+      .tracking-building .tracking-table th:nth-child(6),
+      .tracking-building .tracking-table td:nth-child(6){width:10%;white-space:nowrap}
+      .tracking-building .tracking-table th:nth-child(7),
+      .tracking-building .tracking-table td:nth-child(7){width:10%;white-space:nowrap}
+      .tracking-building .tracking-table th:nth-child(8),
+      .tracking-building .tracking-table td:nth-child(8){width:14%;white-space:nowrap}
+    `}</style>
     {modal&&<div className="tracking-modal-bg"><form className="tracking-modal" onSubmit={salvarPagamento}><div className="tracking-modal-head"><h3>Registrar pagamento</h3><button type="button" onClick={()=>setModal(null)}>×</button></div><div className="tracking-form-grid">
       <label>Valor recebido<input type="number" step="0.01" value={pagamento.valor_recebido} onChange={e=>setPagamento({...pagamento,valor_recebido:e.target.value})} required /></label>
       <label>Data do pagamento<input type="date" value={pagamento.data_pagamento} onChange={e=>setPagamento({...pagamento,data_pagamento:e.target.value})} required /></label>

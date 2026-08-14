@@ -15,6 +15,7 @@ const rotulos = {
 export default function Disponiveis() {
   const [predios, setPredios] = useState([]);
   const [apartamentos, setApartamentos] = useState([]);
+  const [contratosAtivos, setContratosAtivos] = useState([]);
   const [predio, setPredio] = useState("");
   const [situacao, setSituacao] = useState("disponivel");
   const [busca, setBusca] = useState("");
@@ -29,38 +30,63 @@ export default function Disponiveis() {
     setCarregando(true);
     setErro("");
 
-    const [p, a] = await Promise.all([
-      supabase.from("predios").select("id,nome").order("nome"),
+    const [p, a, c] = await Promise.all([
+      supabase.from("predios").select("id,nome,endereco").order("nome"),
       supabase
         .from("apartamentos")
-        .select("id,numero,situacao,observacoes,predio_id,predios(nome)")
-        .order("numero")
+        .select("id,numero,situacao,observacoes,predio_id,predios(nome,endereco)")
+        .order("numero"),
+      supabase
+        .from("contratos")
+        .select("id,apartamento_id,status,data_inicio,data_fim")
+        .eq("status", "ativo")
     ]);
 
-    const falha = p.error || a.error;
+    const falha = p.error || a.error || c.error;
     if (falha) setErro(falha.message);
 
     setPredios(p.data || []);
     setApartamentos(a.data || []);
+    setContratosAtivos(c.data || []);
     setCarregando(false);
   }
 
+  const apartamentosComSituacaoReal = useMemo(() => {
+    const ocupados = new Set(
+      contratosAtivos
+        .filter(c => c.apartamento_id)
+        .map(c => c.apartamento_id)
+    );
+
+    return apartamentos.map(a => {
+      let situacaoReal = a.situacao;
+
+      // Reserva e manutenção continuam respeitando o cadastro manual.
+      // Nos demais casos, a ocupação é definida por contrato ativo.
+      if (a.situacao !== "reservado" && a.situacao !== "manutencao") {
+        situacaoReal = ocupados.has(a.id) ? "ocupado" : "disponivel";
+      }
+
+      return { ...a, situacaoReal };
+    });
+  }, [apartamentos, contratosAtivos]);
+
   const totalDisponivel = useMemo(
-    () => apartamentos.filter(a => a.situacao === "disponivel").length,
-    [apartamentos]
+    () => apartamentosComSituacaoReal.filter(a => a.situacaoReal === "disponivel").length,
+    [apartamentosComSituacaoReal]
   );
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
 
-    return apartamentos.filter(a => {
+    return apartamentosComSituacaoReal.filter(a => {
       const correspondePredio = !predio || a.predio_id === predio;
-      const correspondeSituacao = !situacao || a.situacao === situacao;
-      const texto = `${a.numero || ""} ${a.predios?.nome || ""} ${a.observacoes || ""}`.toLowerCase();
+      const correspondeSituacao = !situacao || a.situacaoReal === situacao;
+      const texto = `${a.numero || ""} ${a.predios?.nome || ""} ${a.predios?.endereco || ""} ${a.observacoes || ""}`.toLowerCase();
       const correspondeBusca = !termo || texto.includes(termo);
       return correspondePredio && correspondeSituacao && correspondeBusca;
     });
-  }, [apartamentos, predio, situacao, busca]);
+  }, [apartamentosComSituacaoReal, predio, situacao, busca]);
 
   const porPredio = useMemo(() => {
     const grupos = new Map();
@@ -74,7 +100,8 @@ export default function Disponiveis() {
         grupos.set(a.predio_id, {
           predio: {
             id: a.predio_id,
-            nome: a.predios?.nome || "Prédio não informado"
+            nome: a.predios?.nome || "Prédio não informado",
+            endereco: a.predios?.endereco || ""
           },
           apartamentos: []
         });
@@ -122,7 +149,9 @@ export default function Disponiveis() {
           <select value={predio} onChange={e => setPredio(e.target.value)}>
             <option value="">Todos os prédios</option>
             {predios.map(p => (
-              <option key={p.id} value={p.id}>{p.nome}</option>
+              <option key={p.id} value={p.id}>
+                {p.nome}{p.endereco ? ` — ${p.endereco}` : ""}
+              </option>
             ))}
           </select>
 
@@ -168,7 +197,14 @@ export default function Disponiveis() {
                     borderBottom: "1px solid #dbe5ef"
                   }}
                 >
-                  <h3 style={{ margin: 0, fontSize: 21 }}>{p.nome}</h3>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 21 }}>{p.nome}</h3>
+                    {p.endereco && (
+                      <div style={{ marginTop: 4, color: "#64748b", fontSize: 14 }}>
+                        {p.endereco}
+                      </div>
+                    )}
+                  </div>
 
                   <span
                     style={{
@@ -208,8 +244,8 @@ export default function Disponiveis() {
                       }}
                     >
                       <div>
-                        <span className={`status-pill ${a.situacao}`}>
-                          {rotulos[a.situacao] || a.situacao}
+                        <span className={`status-pill ${a.situacaoReal}`}>
+                          {rotulos[a.situacaoReal] || a.situacaoReal}
                         </span>
                         <h3>Apartamento {a.numero}</h3>
                         {a.observacoes && <small>{a.observacoes}</small>}

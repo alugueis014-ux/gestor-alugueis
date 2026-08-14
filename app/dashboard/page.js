@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
@@ -18,6 +19,7 @@ export default function Dashboard() {
   const [inquilinos, setInquilinos] = useState([]);
   const [recebimentos, setRecebimentos] = useState([]);
   const [atrasados, setAtrasados] = useState(0);
+  const [prediosAbertos, setPrediosAbertos] = useState({});
   const [erro, setErro] = useState("");
 
   useEffect(() => { carregar(); }, [mes]);
@@ -30,8 +32,8 @@ export default function Dashboard() {
     const hojeIso = hoje.toISOString().slice(0, 10);
 
     const [p, a, i, r, atraso] = await Promise.all([
-      supabase.from("predios").select("id,nome").order("nome"),
-      supabase.from("apartamentos").select("id,predio_id,situacao"),
+      supabase.from("predios").select("id,nome,endereco").order("nome"),
+      supabase.from("apartamentos").select("id,predio_id,numero,situacao,observacoes").order("numero"),
       supabase.from("inquilinos").select("id,status"),
       supabase
         .from("recebimentos")
@@ -45,7 +47,7 @@ export default function Dashboard() {
             apartamentos(
               id,
               predio_id,
-              predios(id,nome)
+              predios(id,nome,endereco)
             )
           )
         `)
@@ -76,6 +78,8 @@ export default function Dashboard() {
       predios.map(predio => [predio.id, {
         id: predio.id,
         nome: predio.nome,
+        endereco: predio.endereco || "",
+        apartamentos: apartamentos.filter(a => a.predio_id === predio.id),
         previsto: 0,
         recebido: 0,
         pendente: 0,
@@ -95,6 +99,8 @@ export default function Dashboard() {
         porPredio.set(predioId, {
           id: predioId,
           nome: predio?.nome || "Prédio não identificado",
+          endereco: predio?.endereco || "",
+          apartamentos: apartamentos.filter(a => a.predio_id === predioId),
           previsto: 0,
           recebido: 0,
           pendente: 0,
@@ -117,7 +123,7 @@ export default function Dashboard() {
     }
 
     return Array.from(porPredio.values());
-  }, [predios, recebimentos]);
+  }, [predios, recebimentos, apartamentos]);
 
   const totais = useMemo(() => resumo.reduce((acc, item) => ({
     previsto: acc.previsto + item.previsto,
@@ -126,6 +132,13 @@ export default function Dashboard() {
     pagos: acc.pagos + item.pagos,
     emAberto: acc.emAberto + item.emAberto
   }), { previsto: 0, recebido: 0, pendente: 0, pagos: 0, emAberto: 0 }), [resumo]);
+
+  function alternarPredio(predioId) {
+    setPrediosAbertos(atual => ({
+      ...atual,
+      [predioId]: !atual[predioId]
+    }));
+  }
 
   return (
     <AuthGuard>
@@ -138,16 +151,49 @@ export default function Dashboard() {
         {erro && <div className="error">{erro}</div>}
 
         <div className="dashboard-cards first-row">
-          <div className="dashboard-card"><span>Previsto</span><strong>{dinheiro(totais.previsto)}</strong></div>
-          <div className="dashboard-card"><span>Recebido</span><strong>{dinheiro(totais.recebido)}</strong></div>
-          <div className="dashboard-card"><span>Pendente</span><strong>{dinheiro(totais.pendente)}</strong></div>
-          <div className="dashboard-card"><span>Prédios</span><strong>{predios.length}</strong></div>
+          <Link href="/recebimentos" className="dashboard-card dashboard-card-link">
+            <span>Previsto</span>
+            <strong>{dinheiro(totais.previsto)}</strong>
+            <small>Ver recebimentos →</small>
+          </Link>
+
+          <Link href="/recebimentos" className="dashboard-card dashboard-card-link">
+            <span>Recebido</span>
+            <strong>{dinheiro(totais.recebido)}</strong>
+            <small>Ver recebimentos →</small>
+          </Link>
+
+          <Link href="/recebimentos" className="dashboard-card dashboard-card-link">
+            <span>Pendente</span>
+            <strong>{dinheiro(totais.pendente)}</strong>
+            <small>Ver pendências →</small>
+          </Link>
+
+          <Link href="/predios" className="dashboard-card dashboard-card-link">
+            <span>Prédios</span>
+            <strong>{predios.length}</strong>
+            <small>Ver prédios →</small>
+          </Link>
         </div>
 
         <div className="dashboard-cards second-row">
-          <div className="dashboard-card"><span>Apartamentos</span><strong>{apartamentos.length}</strong></div>
-          <div className="dashboard-card"><span>Disponíveis</span><strong>{disponiveis}</strong></div>
-          <div className="dashboard-card"><span>Inquilinos</span><strong>{inquilinosAtivos}</strong></div>
+          <Link href="/apartamentos" className="dashboard-card dashboard-card-link">
+            <span>Apartamentos</span>
+            <strong>{apartamentos.length}</strong>
+            <small>Ver apartamentos →</small>
+          </Link>
+
+          <Link href="/disponiveis" className="dashboard-card dashboard-card-link">
+            <span>Disponíveis</span>
+            <strong>{disponiveis}</strong>
+            <small>Ver disponíveis →</small>
+          </Link>
+
+          <Link href="/inquilinos" className="dashboard-card dashboard-card-link">
+            <span>Inquilinos</span>
+            <strong>{inquilinosAtivos}</strong>
+            <small>Ver inquilinos →</small>
+          </Link>
         </div>
 
         <a
@@ -187,14 +233,93 @@ export default function Dashboard() {
                 {resumo.length === 0 ? (
                   <tr><td colSpan="6" className="empty-row">Nenhum prédio cadastrado.</td></tr>
                 ) : resumo.map(item => (
-                  <tr key={item.id}>
-                    <td>{item.nome}</td>
-                    <td>{dinheiro(item.previsto)}</td>
-                    <td>{dinheiro(item.recebido)}</td>
-                    <td>{dinheiro(item.pendente)}</td>
-                    <td>{item.pagos}</td>
-                    <td>{item.emAberto}</td>
-                  </tr>
+                  <Fragment key={item.id}>
+                    <tr key={item.id}>
+                      <td>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <strong>{item.nome}</strong>
+                          {item.endereco && (
+                            <span style={{ color: "#64748b", fontSize: 13 }}>
+                              {item.endereco}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => alternarPredio(item.id)}
+                            style={{
+                              width: "fit-content",
+                              marginTop: 4,
+                              padding: "5px 9px",
+                              borderRadius: 8,
+                              border: "1px solid #cbd5e1",
+                              background: "#fff",
+                              color: "#174f7a",
+                              fontWeight: 700,
+                              cursor: "pointer"
+                            }}
+                          >
+                            {prediosAbertos[item.id] ? "Ocultar apartamentos" : "Mostrar apartamentos"}
+                          </button>
+                        </div>
+                      </td>
+                      <td>{dinheiro(item.previsto)}</td>
+                      <td>{dinheiro(item.recebido)}</td>
+                      <td>{dinheiro(item.pendente)}</td>
+                      <td>{item.pagos}</td>
+                      <td>{item.emAberto}</td>
+                    </tr>
+
+                    {prediosAbertos[item.id] && (
+                      <tr key={`${item.id}-apartamentos`}>
+                        <td colSpan="6" style={{ padding: 0, background: "#f8fafc" }}>
+                          <div style={{ padding: "12px 16px 16px 28px" }}>
+                            {item.apartamentos.length === 0 ? (
+                              <div style={{ color: "#64748b" }}>
+                                Nenhum apartamento cadastrado neste prédio.
+                              </div>
+                            ) : (
+                              <table
+                                style={{
+                                  width: "100%",
+                                  borderCollapse: "collapse",
+                                  background: "#fff"
+                                }}
+                              >
+                                <thead>
+                                  <tr>
+                                    <th style={{ textAlign: "left", padding: "8px 10px" }}>
+                                      Apartamento
+                                    </th>
+                                    <th style={{ textAlign: "left", padding: "8px 10px" }}>
+                                      Situação
+                                    </th>
+                                    <th style={{ textAlign: "left", padding: "8px 10px" }}>
+                                      Observações
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {item.apartamentos.map(apartamento => (
+                                    <tr key={apartamento.id}>
+                                      <td style={{ padding: "8px 10px", borderTop: "1px solid #e2e8f0" }}>
+                                        {apartamento.numero || "-"}
+                                      </td>
+                                      <td style={{ padding: "8px 10px", borderTop: "1px solid #e2e8f0" }}>
+                                        {apartamento.situacao || "-"}
+                                      </td>
+                                      <td style={{ padding: "8px 10px", borderTop: "1px solid #e2e8f0" }}>
+                                        {apartamento.observacoes || "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
               <tfoot>
@@ -210,6 +335,35 @@ export default function Dashboard() {
             </table>
           </div>
         </section>
+        <style jsx>{`
+          :global(.dashboard-card-link){
+            display:block;
+            color:inherit;
+            text-decoration:none;
+            cursor:pointer;
+            transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+          }
+
+          :global(.dashboard-card-link:hover){
+            transform:translateY(-2px);
+            box-shadow:0 8px 22px rgba(30,60,90,.10);
+            border-color:#b8cadc;
+          }
+
+          :global(.dashboard-card-link:focus-visible){
+            outline:3px solid rgba(37,99,235,.22);
+            outline-offset:2px;
+          }
+
+          :global(.dashboard-card-link small){
+            display:block;
+            margin-top:10px;
+            color:#456786;
+            font-size:13px;
+            font-weight:700;
+          }
+        `}</style>
+
       </AppShell>
     </AuthGuard>
   );

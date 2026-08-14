@@ -21,12 +21,12 @@ function dataBR(data) {
 export default function Contratos() {
   const [contratos, setContratos] = useState([]);
   const [busca, setBusca] = useState("");
-  const [status, setStatus] = useState("");
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [contratoUpload, setContratoUpload] = useState(null);
   const inputArquivo = useRef(null);
+  const [mostrarEncerrados, setMostrarEncerrados] = useState(false);
 
   useEffect(() => { carregar(); }, []);
 
@@ -55,25 +55,50 @@ export default function Contratos() {
         c.inquilinos?.nome,
         c.inquilinos?.cpf,
         c.apartamentos?.numero,
-        c.apartamentos?.predios?.nome
+        c.apartamentos?.predios?.nome,
+        c.apartamentos?.predios?.endereco
       ].join(" ").toLowerCase();
 
-      return (
-        texto.includes(busca.toLowerCase()) &&
-        (!status || c.status === status)
-      );
+      return texto.includes(busca.toLowerCase());
     });
-  }, [contratos, busca, status]);
+  }, [contratos, busca]);
+
+  const ativosFiltrados = useMemo(
+    () => filtrados.filter(c => c.status === "ativo"),
+    [filtrados]
+  );
+
+  const encerradosFiltrados = useMemo(
+    () => filtrados.filter(c => c.status === "encerrado"),
+    [filtrados]
+  );
 
   const ativos = contratos.filter(c => c.status === "ativo").length;
   const encerrados = contratos.filter(c => c.status === "encerrado").length;
-  const vencendo = contratos.filter(c => {
-    if (c.status !== "ativo" || !c.data_fim) return false;
-    const hoje = new Date();
-    const fim = new Date(`${c.data_fim}T23:59:59`);
-    const dias = Math.ceil((fim - hoje) / 86400000);
-    return dias >= 0 && dias <= 30;
-  }).length;
+
+  const gruposAtivos = useMemo(() => {
+    const mapa = new Map();
+
+    ativosFiltrados.forEach(c => {
+      const predio = c.apartamentos?.predios;
+      const chave = predio?.id || `sem-predio-${c.apartamento_id || c.id}`;
+
+      if (!mapa.has(chave)) {
+        mapa.set(chave, {
+          id: chave,
+          nome: predio?.nome || "Prédio não informado",
+          endereco: predio?.endereco || "",
+          contratos: []
+        });
+      }
+
+      mapa.get(chave).contratos.push(c);
+    });
+
+    return Array.from(mapa.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR")
+    );
+  }, [ativosFiltrados]);
 
   function visualizar(c) {
     const i = c.inquilinos || {};
@@ -247,15 +272,9 @@ As partes declaram que leram, compreenderam e concordam com todas as condições
           </div>
         </div>
 
-        <div className="contracts-cards">
+        <div className="contracts-cards contracts-cards-one">
           <div className="contracts-card">
             <span>Contratos ativos</span><strong>{ativos}</strong>
-          </div>
-          <div className="contracts-card warning">
-            <span>Vencendo em 30 dias</span><strong>{vencendo}</strong>
-          </div>
-          <div className="contracts-card muted-card">
-            <span>Contratos encerrados</span><strong>{encerrados}</strong>
           </div>
         </div>
 
@@ -263,13 +282,8 @@ As partes declaram que leram, compreenderam e concordam com todas as condições
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar inquilino, prédio ou apartamento"
+            placeholder="Buscar inquilino, prédio, endereço ou apartamento"
           />
-          <select value={status} onChange={e => setStatus(e.target.value)}>
-            <option value="">Todos os status</option>
-            <option value="ativo">Ativos</option>
-            <option value="encerrado">Encerrados</option>
-          </select>
         </div>
 
         {erro && <div className="error">{erro}</div>}
@@ -282,82 +296,331 @@ As partes declaram que leram, compreenderam e concordam com todas as condições
           onChange={enviarArquivo}
         />
 
-        <div className="panel table-wrap contracts-table-panel">
-          <table className="contracts-table">
-            <thead>
-              <tr>
-                <th>Inquilino</th>
-                <th>Prédio</th>
-                <th>Apartamento</th>
-                <th>Valor</th>
-                <th>Vencimento</th>
-                <th>Período</th>
-                <th>Status</th>
-                <th>Anexo</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {carregando && (
-                <tr><td colSpan="9" className="empty-row">Carregando...</td></tr>
-              )}
+        <style jsx>{`
+          .contracts-cards-one {
+            grid-template-columns: minmax(0, 1fr);
+          }
 
-              {!carregando && filtrados.length === 0 && (
-                <tr>
-                  <td colSpan="9" className="empty-row">
-                    Nenhum contrato encontrado.
-                  </td>
-                </tr>
-              )}
+          .contracts-toolbar input {
+            width: 100%;
+          }
 
-              {filtrados.map(c => {
-                const anexo = c.anexos?.[c.anexos.length - 1];
+          .contracts-groups {
+            display: grid;
+            gap: 18px;
+            margin-top: 16px;
+          }
 
-                return (
-                  <tr key={c.id}>
-                    <td><strong>{c.inquilinos?.nome || "-"}</strong></td>
-                    <td>{c.apartamentos?.predios?.nome || "-"}</td>
-                    <td>{c.apartamentos?.numero || "-"}</td>
-                    <td>{moeda(c.valor_aluguel)}</td>
-                    <td>Dia {c.dia_vencimento}</td>
-                    <td>{dataBR(c.data_inicio)} até {c.data_fim ? dataBR(c.data_fim) : "indeterminado"}</td>
-                    <td>
-                      <span className={`badge ${c.status}`}>
-                        {c.status === "ativo" ? "Ativo" : "Encerrado"}
-                      </span>
-                    </td>
-                    <td>
-                      {anexo ? (
-                        <button className="link-button" onClick={() => verAnexo(anexo)}>
-                          Ver anexo
-                        </button>
-                      ) : "Sem anexo"}
-                    </td>
-                    <td>
-                      <div className="contract-actions">
-                        <button className="secondary" onClick={() => visualizar(c)}>
-                          Visualizar
-                        </button>
-                        <button
-                          className="secondary"
-                          disabled={enviando}
-                          onClick={() => selecionarArquivo(c)}
-                        >
-                          {enviando && contratoUpload?.id === c.id ? "Enviando..." : "Anexar"}
-                        </button>
-                        {c.status === "ativo" && (
-                          <button className="danger" onClick={() => encerrar(c)}>
-                            Encerrar
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          .contract-building {
+            border: 1px solid #d7e2ee;
+            border-radius: 12px;
+            background: #fff;
+            overflow: hidden;
+          }
+
+          .contract-building-header {
+            padding: 14px 16px 10px;
+            border-bottom: 1px solid #d7e2ee;
+          }
+
+          .contract-building-header h3 {
+            margin: 0;
+            font-size: 18px;
+          }
+
+          .contract-building-header p {
+            margin: 4px 0 0;
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          .contracts-scroll {
+            width: 100%;
+            max-width: calc(100vw - 90px);
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-gutter: stable;
+            padding: 0 12px 8px;
+          }
+
+          .contracts-scroll .contracts-table {
+            width: 100%;
+            min-width: 1180px;
+            table-layout: fixed;
+          }
+
+          .contracts-scroll .contracts-table th,
+          .contracts-scroll .contracts-table td {
+            box-sizing: border-box;
+            vertical-align: middle;
+          }
+
+          .contracts-scroll .contracts-table th:nth-child(1),
+          .contracts-scroll .contracts-table td:nth-child(1) {
+            width: 19%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+
+          .contracts-scroll .contracts-table th:nth-child(2),
+          .contracts-scroll .contracts-table td:nth-child(2) {
+            width: 12%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+
+          .contracts-scroll .contracts-table th:nth-child(3),
+          .contracts-scroll .contracts-table td:nth-child(3) {
+            width: 10%;
+            white-space: nowrap;
+          }
+
+          .contracts-scroll .contracts-table th:nth-child(4),
+          .contracts-scroll .contracts-table td:nth-child(4) {
+            width: 10%;
+            white-space: nowrap;
+          }
+
+          .contracts-scroll .contracts-table th:nth-child(5),
+          .contracts-scroll .contracts-table td:nth-child(5) {
+            width: 18%;
+            white-space: normal;
+          }
+
+          .contracts-scroll .contracts-table th:nth-child(6),
+          .contracts-scroll .contracts-table td:nth-child(6) {
+            width: 9%;
+            white-space: nowrap;
+          }
+
+          .contracts-scroll .contracts-table th:nth-child(7),
+          .contracts-scroll .contracts-table td:nth-child(7) {
+            width: 9%;
+            white-space: nowrap;
+          }
+
+          .contracts-scroll .contracts-table th:nth-child(8),
+          .contracts-scroll .contracts-table td:nth-child(8) {
+            width: 13%;
+            white-space: nowrap;
+          }
+
+          .contracts-scroll .contract-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: nowrap;
+            align-items: center;
+          }
+
+          .contracts-scroll::-webkit-scrollbar {
+            height: 14px;
+          }
+
+          .contracts-scroll::-webkit-scrollbar-track {
+            background: #e8eef5;
+            border-radius: 999px;
+          }
+
+          .contracts-scroll::-webkit-scrollbar-thumb {
+            background: #8fa6bd;
+            border: 3px solid #e8eef5;
+            border-radius: 999px;
+          }
+
+          .closed-section {
+            margin-top: 24px;
+          }
+
+          .closed-toggle {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 15px 18px;
+            border: 1px solid #d7e2ee;
+            border-radius: 12px;
+            background: #fff;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 16px;
+          }
+
+          .closed-panel {
+            margin-top: 10px;
+          }
+
+          @media (max-width: 800px) {
+            .contracts-cards-one {
+              grid-template-columns: 1fr;
+            }
+          }
+        `}</style>
+
+        <div className="contracts-groups">
+          {carregando && (
+            <div className="panel">
+              <div className="empty-row">Carregando...</div>
+            </div>
+          )}
+
+          {!carregando && gruposAtivos.length === 0 && (
+            <div className="panel">
+              <div className="empty-row">Nenhum contrato ativo encontrado.</div>
+            </div>
+          )}
+
+          {!carregando && gruposAtivos.map(grupo => (
+            <section className="contract-building" key={grupo.id}>
+              <div className="contract-building-header">
+                <h3>{grupo.nome}</h3>
+                {grupo.endereco && <p>{grupo.endereco}</p>}
+              </div>
+
+              <div className="contracts-scroll">
+                <table className="contracts-table">
+                  <thead>
+                    <tr>
+                      <th>Inquilino</th>
+                      <th>Apartamento</th>
+                      <th>Valor</th>
+                      <th>Vencimento</th>
+                      <th>Período</th>
+                      <th>Status</th>
+                      <th>Anexo</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grupo.contratos.map(c => {
+                      const anexo = c.anexos?.[c.anexos.length - 1];
+
+                      return (
+                        <tr key={c.id}>
+                          <td><strong>{c.inquilinos?.nome || "-"}</strong></td>
+                          <td>{c.apartamentos?.numero || "-"}</td>
+                          <td>{moeda(c.valor_aluguel)}</td>
+                          <td>Dia {c.dia_vencimento}</td>
+                          <td>{dataBR(c.data_inicio)} até {c.data_fim ? dataBR(c.data_fim) : "indeterminado"}</td>
+                          <td><span className="badge ativo">Ativo</span></td>
+                          <td>
+                            {anexo ? (
+                              <button className="link-button" onClick={() => verAnexo(anexo)}>
+                                Ver anexo
+                              </button>
+                            ) : "Sem anexo"}
+                          </td>
+                          <td>
+                            <div className="contract-actions">
+                              <button className="secondary" onClick={() => visualizar(c)}>
+                                Visualizar
+                              </button>
+                              <button
+                                className="secondary"
+                                disabled={enviando}
+                                onClick={() => selecionarArquivo(c)}
+                              >
+                                {enviando && contratoUpload?.id === c.id ? "Enviando..." : "Anexar"}
+                              </button>
+                              <button className="danger" onClick={() => encerrar(c)}>
+                                Encerrar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
         </div>
+
+        <section className="closed-section">
+          <button
+            type="button"
+            className="closed-toggle"
+            onClick={() => setMostrarEncerrados(v => !v)}
+          >
+            <span>Contratos encerrados ({encerradosFiltrados.length})</span>
+            <span>{mostrarEncerrados ? "Ocultar ▲" : "Mostrar ▼"}</span>
+          </button>
+
+          {mostrarEncerrados && (
+            <div className="panel table-wrap contracts-scroll closed-panel">
+              <table className="contracts-table">
+                <thead>
+                  <tr>
+                    <th>Inquilino</th>
+                    <th>Prédio</th>
+                    <th>Apartamento</th>
+                    <th>Valor</th>
+                    <th>Vencimento</th>
+                    <th>Período</th>
+                    <th>Status</th>
+                    <th>Anexo</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {encerradosFiltrados.length === 0 && (
+                    <tr>
+                      <td colSpan="9" className="empty-row">
+                        Nenhum contrato encerrado encontrado.
+                      </td>
+                    </tr>
+                  )}
+
+                  {encerradosFiltrados.map(c => {
+                    const anexo = c.anexos?.[c.anexos.length - 1];
+
+                    return (
+                      <tr key={c.id}>
+                        <td><strong>{c.inquilinos?.nome || "-"}</strong></td>
+                        <td>
+                          <strong>{c.apartamentos?.predios?.nome || "-"}</strong>
+                          {c.apartamentos?.predios?.endereco && (
+                            <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
+                              {c.apartamentos.predios.endereco}
+                            </div>
+                          )}
+                        </td>
+                        <td>{c.apartamentos?.numero || "-"}</td>
+                        <td>{moeda(c.valor_aluguel)}</td>
+                        <td>Dia {c.dia_vencimento}</td>
+                        <td>{dataBR(c.data_inicio)} até {c.data_fim ? dataBR(c.data_fim) : "indeterminado"}</td>
+                        <td><span className="badge encerrado">Encerrado</span></td>
+                        <td>
+                          {anexo ? (
+                            <button className="link-button" onClick={() => verAnexo(anexo)}>
+                              Ver anexo
+                            </button>
+                          ) : "Sem anexo"}
+                        </td>
+                        <td>
+                          <div className="contract-actions">
+                            <button className="secondary" onClick={() => visualizar(c)}>
+                              Visualizar
+                            </button>
+                            <button
+                              className="secondary"
+                              disabled={enviando}
+                              onClick={() => selecionarArquivo(c)}
+                            >
+                              {enviando && contratoUpload?.id === c.id ? "Enviando..." : "Anexar"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </AppShell>
     </AuthGuard>
   );

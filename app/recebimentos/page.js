@@ -38,8 +38,14 @@ export default function Recebimentos() {
   const [lista, setLista] = useState([]);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(true);
-  const [gerando, setGerando] = useState(false);
   const [modal, setModal] = useState(null);
+  const [modalReceber, setModalReceber] = useState(null);
+  const [salvandoReceber, setSalvandoReceber] = useState(false);
+  const [formReceber, setFormReceber] = useState({
+    valor_recebido: "",
+    data_pagamento: hojeISO(),
+    forma_pagamento: "pix"
+  });
   const [form, setForm] = useState({
     valor_previsto: "",
     valor_recebido: "",
@@ -52,8 +58,75 @@ export default function Recebimentos() {
   });
 
   useEffect(() => {
-    carregar();
+    const agora = new Date();
+    const mesAtual = `${agora.getFullYear()}-${String(
+      agora.getMonth() + 1
+    ).padStart(2, "0")}`;
+
+    // Só gera automaticamente as cobranças do mês atual.
+    // Mês futuro pode ser consultado, mas não será criado antes do dia 1º.
+    if (mes === mesAtual) {
+      prepararMes();
+    } else {
+      carregar();
+    }
   }, [mes]);
+
+  async function prepararMes() {
+    setCarregando(true);
+    setErro("");
+
+    try {
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError || !auth.user) throw new Error("Sessão inválida.");
+
+      const { data: contratos, error: contratosError } = await supabase
+        .from("contratos")
+        .select("id,valor_aluguel,dia_vencimento,data_inicio,data_fim,status");
+
+      if (contratosError) throw contratosError;
+
+      const validos = (contratos || []).filter(c => {
+        const inicio = c.data_inicio?.slice(0, 7);
+        const fim = c.data_fim?.slice(0, 7);
+
+        return (
+          c.status !== "cancelado" &&
+          (!inicio || inicio <= mes) &&
+          (!fim || fim >= mes)
+        );
+      });
+
+      if (validos.length > 0) {
+        const registros = validos.map(c => ({
+          proprietario_id: auth.user.id,
+          contrato_id: c.id,
+          competencia: `${mes}-01`,
+          data_vencimento: vencimentoDaCompetencia(mes, c.dia_vencimento),
+          valor_previsto: Number(c.valor_aluguel),
+          valor_recebido: 0,
+          multa: 0,
+          juros: 0,
+          desconto: 0,
+          status: "pendente"
+        }));
+
+        const { error: upsertError } = await supabase
+          .from("recebimentos")
+          .upsert(registros, {
+            onConflict: "contrato_id,competencia",
+            ignoreDuplicates: true
+          });
+
+        if (upsertError) throw upsertError;
+      }
+
+      await carregar();
+    } catch (e) {
+      setErro(e.message || "Não foi possível preparar as cobranças do mês.");
+      setCarregando(false);
+    }
+  }
 
   async function carregar() {
     setCarregando(true);
@@ -66,7 +139,7 @@ export default function Recebimentos() {
         contratos(
           id,
           inquilinos(id,nome,cpf,telefone),
-          apartamentos(id,numero,predios(id,nome))
+          apartamentos(id,numero,predios(id,nome,endereco))
         )
       `)
       .eq("competencia", `${mes}-01`)
@@ -77,61 +150,6 @@ export default function Recebimentos() {
     setCarregando(false);
   }
 
-  async function gerarCobrancas() {
-    setGerando(true);
-    setErro("");
-
-    try {
-      const { data: auth, error: authError } = await supabase.auth.getUser();
-      if (authError || !auth.user) throw new Error("Sessão inválida.");
-
-      const { data: contratos, error: contratosError } = await supabase
-        .from("contratos")
-        .select("id,valor_aluguel,dia_vencimento,data_inicio,data_fim,status")
-        .eq("status", "ativo");
-
-      if (contratosError) throw contratosError;
-
-      const validos = (contratos || []).filter(c => {
-        const inicio = c.data_inicio?.slice(0, 7);
-        const fim = c.data_fim?.slice(0, 7);
-        return (!inicio || inicio <= mes) && (!fim || fim >= mes);
-      });
-
-      if (!validos.length) {
-        alert("Nenhum contrato ativo encontrado para este mês.");
-        return;
-      }
-
-      const registros = validos.map(c => ({
-        proprietario_id: auth.user.id,
-        contrato_id: c.id,
-        competencia: `${mes}-01`,
-        data_vencimento: vencimentoDaCompetencia(mes, c.dia_vencimento),
-        valor_previsto: Number(c.valor_aluguel),
-        valor_recebido: 0,
-        multa: 0,
-        juros: 0,
-        desconto: 0,
-        status: "pendente"
-      }));
-
-      const { error } = await supabase
-        .from("recebimentos")
-        .upsert(registros, {
-          onConflict: "contrato_id,competencia",
-          ignoreDuplicates: true
-        });
-
-      if (error) throw error;
-
-      await carregar();
-    } catch (e) {
-      setErro(e.message || "Não foi possível gerar as cobranças.");
-    } finally {
-      setGerando(false);
-    }
-  }
 
   const linhas = useMemo(
     () =>
@@ -144,6 +162,73 @@ export default function Recebimentos() {
       })),
     [lista]
   );
+
+  const grupos = useMemo(() => {
+    const mapa = new Map();
+    linhas.forEach((r) => {
+      const id = r.predio?.id || "sem-predio";
+      if (!mapa.has(id)) {
+        mapa.set(id, {
+          id,
+          nome: r.predio?.nome || "Sem prédio",
+          endereco: r.predio?.endereco || "",
+          linhas: []
+        });
+      }
+      mapa.get(id).linhas.push(r);
+    });
+    return Array.from(mapa.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR")
+    );
+  }, [linhas]);
+
+  function abrirReceber(r) {
+    setErro("");
+    setModalReceber(r);
+    setFormReceber({
+      valor_recebido: String(r.valor_previsto || ""),
+      data_pagamento: hojeISO(),
+      forma_pagamento: "pix"
+    });
+  }
+
+  async function confirmarRecebimento(e) {
+    e.preventDefault();
+    if (!modalReceber) return;
+
+    const valor = Number(formReceber.valor_recebido || 0);
+    if (valor <= 0) {
+      return setErro("Informe o valor recebido.");
+    }
+    if (!formReceber.data_pagamento) {
+      return setErro("Informe a data do pagamento.");
+    }
+
+    setSalvandoReceber(true);
+    setErro("");
+
+    try {
+      const { error } = await supabase
+        .from("recebimentos")
+        .update({
+          valor_recebido: valor,
+          data_pagamento: formReceber.data_pagamento,
+          forma_pagamento: formReceber.forma_pagamento || null,
+          status: "pago",
+          atualizado_em: new Date().toISOString()
+        })
+        .eq("id", modalReceber.id);
+
+      if (error) throw error;
+
+      setModalReceber(null);
+      await carregar();
+    } catch (e) {
+      setErro(e.message || "Não foi possível registrar o pagamento.");
+    } finally {
+      setSalvandoReceber(false);
+    }
+  }
 
   function abrirEditar(r) {
     setModal(r);
@@ -206,6 +291,35 @@ export default function Recebimentos() {
       .eq("id", r.id);
 
     if (error) return setErro(error.message);
+    await carregar();
+  }
+
+  async function excluirTodos() {
+    if (lista.length === 0) return;
+
+    const competencia = `${mes}-01`;
+    const mesFormatado = mes.split("-").reverse().join("/");
+
+    if (
+      !confirm(
+        `Excluir TODAS as cobranças de ${mesFormatado}?\n\n` +
+        `Serão excluídos ${lista.length} recebimento(s), inclusive os que estiverem pagos.\n` +
+        `Esta ação não pode ser desfeita.`
+      )
+    ) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("recebimentos")
+      .delete()
+      .eq("competencia", competencia);
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
     await carregar();
   }
 
@@ -280,11 +394,13 @@ export default function Recebimentos() {
               onChange={e => setMes(e.target.value)}
             />
             <button
-              className="primary receipts-generate-button"
-              onClick={gerarCobrancas}
-              disabled={gerando}
+              type="button"
+              className="danger"
+              onClick={excluirTodos}
+              disabled={carregando || lista.length === 0}
+              title="Excluir todas as cobranças do mês selecionado"
             >
-              {gerando ? "Gerando..." : "Gerar cobranças"}
+              Excluir todos
             </button>
           </div>
         </div>
@@ -302,108 +418,157 @@ export default function Recebimentos() {
         )}
 
         {!carregando && linhas.length > 0 && (
-          <div className="receipts-table-wrap">
-            <table className="receipts-table">
-              <thead>
-                <tr>
-                  <th>Mês</th>
-                  <th>Prédio</th>
-                  <th>Apto</th>
-                  <th>Inquilino</th>
-                  <th>Previsto</th>
-                  <th>Recebido</th>
-                  <th>Data</th>
-                  <th>Status</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {linhas.map(r => (
-                  <tr key={r.id}>
-                    <td>{mes}</td>
-                    <td>{r.predio?.nome || "-"}</td>
-                    <td>{r.apartamento?.numero || "-"}</td>
-                    <td>{r.inquilino?.nome || "-"}</td>
-                    <td>{moeda(r.valor_previsto)}</td>
-                    <td>{moeda(r.valor_recebido)}</td>
-                    <td>
-                      {r.data_pagamento
-                        ? new Date(`${r.data_pagamento}T12:00:00`).toLocaleDateString("pt-BR")
-                        : ""}
-                    </td>
-                    <td>
-                      <span className={`receipts-status ${r.statusTela.toLowerCase()}`}>
-                        {r.statusTela}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="receipts-actions">
-                        <button
-                          className="primary"
-                          onClick={() => abrirEditar(r)}
-                        >
-                          Editar
-                        </button>
-
-                        <button
-                          className="secondary"
-                          onClick={() => estornar(r)}
-                        >
-                          Estornar
-                        </button>
-
-                        <button
-                          className="secondary"
-                          onClick={() => recibo(r)}
-                        >
-                          Recibo
-                        </button>
-
-                        <button
-                          className="danger"
-                          onClick={() => excluir(r)}
-                        >
-                          Excluir
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="receipts-buildings">
+            {grupos.map(grupo => (
+              <section className="receipts-building" key={grupo.id}>
+                <div className="receipts-building-head">
+                  <h3>{grupo.nome}</h3>
+                  {grupo.endereco && <p>{grupo.endereco}</p>}
+                </div>
+                <div className="receipts-table-wrap">
+                  <table className="receipts-table">
+                    <thead>
+                      <tr>
+                        <th>Mês</th><th>Apto</th><th>Inquilino</th>
+                        <th>Previsto</th><th>Recebido</th><th>Data</th>
+                        <th>Status</th><th>Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grupo.linhas.map(r => (
+                        <tr key={r.id}>
+                          <td>{mes}</td>
+                          <td>{r.apartamento?.numero || "-"}</td>
+                          <td>{r.inquilino?.nome || "-"}</td>
+                          <td>{moeda(r.valor_previsto)}</td>
+                          <td>{moeda(r.valor_recebido)}</td>
+                          <td>{r.data_pagamento
+                            ? new Date(`${r.data_pagamento}T12:00:00`).toLocaleDateString("pt-BR")
+                            : ""}</td>
+                          <td><span className={`receipts-status ${r.statusTela.toLowerCase()}`}>{r.statusTela}</span></td>
+                          <td>
+                            <div className="receipts-actions">
+                              {r.statusTela !== "Pago" && (
+                                <button className="primary" onClick={() => abrirReceber(r)}>
+                                  Receber
+                                </button>
+                              )}
+                              <button className="secondary" onClick={() => estornar(r)}>Estornar</button>
+                              <button className="secondary" onClick={() => recibo(r)}>Recibo</button>
+                              <button className="danger" onClick={() => excluir(r)}>Excluir</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ))}
           </div>
         )}
 
-        {modal && (
+        <style jsx>{`
+          .receipts-header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+          .receipts-buildings{display:grid;gap:18px}
+          .receipts-building{background:#fff;border:1px solid #dbe3ee;border-radius:12px;overflow:hidden}
+          .receipts-building-head{padding:14px 16px 10px;border-bottom:1px solid #e5eaf1}
+          .receipts-building-head h3{margin:0;font-size:18px}
+          .receipts-building-head p{margin:4px 0 0;color:#64748b;font-size:13px}
+          .receipts-building .receipts-table-wrap{margin:0;border:0;border-radius:0;overflow-x:auto}
+          .receipts-building .receipts-table{
+            width:100%;
+            min-width:1180px;
+            table-layout:fixed;
+          }
+          .receipts-building .receipts-table th,
+          .receipts-building .receipts-table td{
+            box-sizing:border-box;
+            vertical-align:middle;
+          }
+          .receipts-building .receipts-table th:nth-child(1),
+          .receipts-building .receipts-table td:nth-child(1){
+            width:10%;
+            white-space:nowrap;
+          }
+          .receipts-building .receipts-table th:nth-child(2),
+          .receipts-building .receipts-table td:nth-child(2){
+            width:10%;
+            white-space:normal;
+            overflow-wrap:anywhere;
+          }
+          .receipts-building .receipts-table th:nth-child(3),
+          .receipts-building .receipts-table td:nth-child(3){
+            width:22%;
+            white-space:normal;
+            overflow-wrap:anywhere;
+            line-height:1.35;
+          }
+          .receipts-building .receipts-table th:nth-child(4),
+          .receipts-building .receipts-table td:nth-child(4){
+            width:12%;
+            white-space:nowrap;
+          }
+          .receipts-building .receipts-table th:nth-child(5),
+          .receipts-building .receipts-table td:nth-child(5){
+            width:12%;
+            white-space:nowrap;
+          }
+          .receipts-building .receipts-table th:nth-child(6),
+          .receipts-building .receipts-table td:nth-child(6){
+            width:11%;
+            white-space:nowrap;
+          }
+          .receipts-building .receipts-table th:nth-child(7),
+          .receipts-building .receipts-table td:nth-child(7){
+            width:10%;
+            white-space:nowrap;
+          }
+          .receipts-building .receipts-table th:nth-child(8),
+          .receipts-building .receipts-table td:nth-child(8){
+            width:23%;
+            white-space:nowrap;
+          }
+          .receipts-building .receipts-actions{
+            display:flex;
+            gap:6px;
+            flex-wrap:nowrap;
+            align-items:center;
+          }
+        `}</style>
+
+        {modalReceber && (
           <div className="receipts-modal-bg">
-            <form className="receipts-modal" onSubmit={salvarEdicao}>
+            <form className="receipts-modal" onSubmit={confirmarRecebimento}>
               <div className="receipts-modal-head">
-                <h3>Editar recebimento</h3>
-                <button type="button" onClick={() => setModal(null)}>×</button>
+                <div>
+                  <h3>Registrar pagamento</h3>
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 13 }}>
+                    {modalReceber.inquilino?.nome || "-"} — Apto {modalReceber.apartamento?.numero || "-"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalReceber(null)}
+                  disabled={salvandoReceber}
+                >
+                  ×
+                </button>
               </div>
 
               <div className="receipts-form-grid">
                 <label>
-                  Valor previsto
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.valor_previsto}
-                    onChange={e => setForm({...form, valor_previsto:e.target.value})}
-                    required
-                  />
-                </label>
-
-                <label>
                   Valor recebido
                   <input
                     type="number"
-                    min="0"
+                    min="0.01"
                     step="0.01"
-                    value={form.valor_recebido}
-                    onChange={e => setForm({...form, valor_recebido:e.target.value})}
+                    value={formReceber.valor_recebido}
+                    onChange={e =>
+                      setFormReceber({ ...formReceber, valor_recebido: e.target.value })
+                    }
+                    required
+                    autoFocus
                   />
                 </label>
 
@@ -411,18 +576,22 @@ export default function Recebimentos() {
                   Data do pagamento
                   <input
                     type="date"
-                    value={form.data_pagamento}
-                    onChange={e => setForm({...form, data_pagamento:e.target.value})}
+                    value={formReceber.data_pagamento}
+                    onChange={e =>
+                      setFormReceber({ ...formReceber, data_pagamento: e.target.value })
+                    }
+                    required
                   />
                 </label>
 
-                <label>
+                <label className="receipts-full">
                   Forma de pagamento
                   <select
-                    value={form.forma_pagamento}
-                    onChange={e => setForm({...form, forma_pagamento:e.target.value})}
+                    value={formReceber.forma_pagamento}
+                    onChange={e =>
+                      setFormReceber({ ...formReceber, forma_pagamento: e.target.value })
+                    }
                   >
-                    <option value="">Não informada</option>
                     <option value="pix">PIX</option>
                     <option value="dinheiro">Dinheiro</option>
                     <option value="transferencia">Transferência</option>
@@ -431,63 +600,27 @@ export default function Recebimentos() {
                     <option value="outro">Outro</option>
                   </select>
                 </label>
-
-                <label>
-                  Multa
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.multa}
-                    onChange={e => setForm({...form, multa:e.target.value})}
-                  />
-                </label>
-
-                <label>
-                  Juros
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.juros}
-                    onChange={e => setForm({...form, juros:e.target.value})}
-                  />
-                </label>
-
-                <label>
-                  Desconto
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.desconto}
-                    onChange={e => setForm({...form, desconto:e.target.value})}
-                  />
-                </label>
-
-                <label className="receipts-full">
-                  Observações
-                  <textarea
-                    value={form.observacoes}
-                    onChange={e => setForm({...form, observacoes:e.target.value})}
-                  />
-                </label>
               </div>
+
+              {erro && <div className="error" style={{ marginTop: 12 }}>{erro}</div>}
 
               <div className="receipts-modal-actions">
                 <button
                   type="button"
                   className="secondary"
-                  onClick={() => setModal(null)}
+                  onClick={() => setModalReceber(null)}
+                  disabled={salvandoReceber}
                 >
                   Cancelar
                 </button>
-
-                <button className="primary">Salvar alterações</button>
+                <button className="primary" disabled={salvandoReceber}>
+                  {salvandoReceber ? "Registrando..." : "Confirmar pagamento"}
+                </button>
               </div>
             </form>
           </div>
         )}
+
       </AppShell>
     </AuthGuard>
   );

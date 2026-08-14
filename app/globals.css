@@ -451,3 +451,68 @@ label{display:flex;flex-direction:column;gap:6px;font-weight:700}input,select,te
 .tracking-whatsapp:hover{
   background:#dcfce7;
 }
+
+
+/* Rolagem horizontal global para tabelas largas */
+.table-wrap,
+.summary-table-wrap,
+.reports-table-wrap,
+.tracking-table-wrap,
+.receipts-table-wrap,
+.backup-history-table-wrap,
+.contracts-table-panel {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.table-wrap table,
+.summary-table,
+.reports-table,
+.tracking-table,
+.receipts-table,
+.backup-history-table,
+.contracts-table {
+  width: 100%;
+}
+
+/* Mantém as tabelas de contratos largas o suficiente para exibir a barra horizontal */
+.contracts-table {
+  min-width: 1450px;
+}
+
+/* Melhora a visibilidade da barra horizontal em navegadores Chromium/Edge */
+.table-wrap::-webkit-scrollbar,
+.summary-table-wrap::-webkit-scrollbar,
+.reports-table-wrap::-webkit-scrollbar,
+.tracking-table-wrap::-webkit-scrollbar,
+.receipts-table-wrap::-webkit-scrollbar,
+.backup-history-table-wrap::-webkit-scrollbar,
+.contracts-table-panel::-webkit-scrollbar {
+  height: 12px;
+}
+
+.table-wrap::-webkit-scrollbar-thumb,
+.summary-table-wrap::-webkit-scrollbar-thumb,
+.reports-table-wrap::-webkit-scrollbar-thumb,
+.tracking-table-wrap::-webkit-scrollbar-thumb,
+.receipts-table-wrap::-webkit-scrollbar-thumb,
+.backup-history-table-wrap::-webkit-scrollbar-thumb,
+.contracts-table-panel::-webkit-scrollbar-thumb {
+  background: #9fb3c8;
+  border-radius: 999px;
+  border: 2px solid #eef3f8;
+}
+
+.table-wrap::-webkit-scrollbar-track,
+.summary-table-wrap::-webkit-scrollbar-track,
+.reports-table-wrap::-webkit-scrollbar-track,
+.tracking-table-wrap::-webkit-scrollbar-track,
+.receipts-table-wrap::-webkit-scrollbar-track,
+.backup-history-table-wrap::-webkit-scrollbar-track,
+.contracts-table-panel::-webkit-scrollbar-track {
+  background: #eef3f8;
+  border-radius: 999px;
+}

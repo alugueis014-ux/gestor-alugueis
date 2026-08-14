@@ -68,7 +68,7 @@ export default function Relatorios() {
         .lte("competencia", fim),
       supabase
         .from("predios")
-        .select("id,nome")
+        .select("id,nome,endereco")
         .order("nome")
     ]);
 
@@ -136,6 +136,7 @@ export default function Relatorios() {
       return {
         id: predio.id,
         nome: predio.nome,
+        endereco: predio.endereco || "",
         previsto,
         recebido,
         pendente,
@@ -219,6 +220,7 @@ export default function Relatorios() {
               <thead>
                 <tr>
                   <th>Prédio</th>
+                  <th>Endereço</th>
                   <th>Previsto</th>
                   <th>Recebido</th>
                   <th>Pendente</th>
@@ -229,13 +231,13 @@ export default function Relatorios() {
               <tbody>
                 {carregando && (
                   <tr>
-                    <td colSpan="5" className="reports-empty">Carregando...</td>
+                    <td colSpan="6" className="reports-empty">Carregando...</td>
                   </tr>
                 )}
 
                 {!carregando && porPredio.length === 0 && (
                   <tr>
-                    <td colSpan="5" className="reports-empty">
+                    <td colSpan="6" className="reports-empty">
                       Nenhum prédio cadastrado.
                     </td>
                   </tr>
@@ -244,6 +246,7 @@ export default function Relatorios() {
                 {!carregando && porPredio.map(item => (
                   <tr key={item.id}>
                     <td>{item.nome}</td>
+                    <td>{item.endereco || "—"}</td>
                     <td>{moeda(item.previsto)}</td>
                     <td>{moeda(item.recebido)}</td>
                     <td>{moeda(item.pendente)}</td>

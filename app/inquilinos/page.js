@@ -34,6 +34,15 @@ export default function Inquilinos() {
   const [editandoId, setEditandoId] = useState(null);
   const [contratoEditandoId, setContratoEditandoId] = useState(null);
   const [apartamentoAnteriorId, setApartamentoAnteriorId] = useState(null);
+  const [modalTransferencia, setModalTransferencia] = useState(null);
+  const [transferindo, setTransferindo] = useState(false);
+  const [formTransferencia, setFormTransferencia] = useState({
+    predio_id: "",
+    apartamento_id: "",
+    valor_aluguel: "",
+    dia_vencimento: "",
+    data_transferencia: new Date().toISOString().slice(0, 10)
+  });
 
   useEffect(() => { carregarTudo(); }, []);
 
@@ -62,6 +71,16 @@ export default function Inquilinos() {
       (a.situacao !== "ocupado" || a.id === form.apartamento_id)
     );
   }, [apartamentos, form.predio_id, form.apartamento_id]);
+
+  const prediosComApartamentosDisponiveis = useMemo(() => {
+    return predios.filter((predio) =>
+      apartamentos.some(
+        (a) =>
+          a.predio_id === predio.id &&
+          (a.situacao !== "ocupado" || a.id === form.apartamento_id)
+      )
+    );
+  }, [predios, apartamentos, form.apartamento_id]);
 
   const filtrados = lista.filter(i => {
     const texto = [i.nome, i.cpf, i.telefone].join(" ").toLowerCase();
@@ -102,6 +121,134 @@ export default function Inquilinos() {
       grupo => grupo.inquilinos.length > 0
     );
   }, [predios, filtrados]);
+
+  const apartamentosDisponiveisTransferencia = useMemo(() => {
+    if (!formTransferencia.predio_id) return [];
+    return apartamentos.filter(
+      a =>
+        a.predio_id === formTransferencia.predio_id &&
+        a.situacao !== "ocupado"
+    );
+  }, [apartamentos, formTransferencia.predio_id]);
+
+  function abrirTransferencia(inquilino) {
+    const contratoAtivo = (inquilino.contratos || []).find(c => c.status === "ativo");
+
+    if (!contratoAtivo) {
+      return setErro("Este inquilino não possui contrato ativo para transferir.");
+    }
+
+    setErro("");
+    setModalTransferencia({ inquilino, contrato: contratoAtivo });
+    setFormTransferencia({
+      predio_id: "",
+      apartamento_id: "",
+      valor_aluguel: String(contratoAtivo.valor_aluguel ?? ""),
+      dia_vencimento: String(contratoAtivo.dia_vencimento ?? ""),
+      data_transferencia: new Date().toISOString().slice(0, 10)
+    });
+  }
+
+  async function transferirInquilino(e) {
+    e.preventDefault();
+    if (!modalTransferencia) return;
+
+    const { inquilino, contrato } = modalTransferencia;
+
+    if (!formTransferencia.predio_id || !formTransferencia.apartamento_id) {
+      return setErro("Selecione o prédio e o novo apartamento.");
+    }
+    if (!formTransferencia.valor_aluguel || Number(formTransferencia.valor_aluguel) <= 0) {
+      return setErro("Informe o valor do aluguel.");
+    }
+    if (
+      !formTransferencia.dia_vencimento ||
+      Number(formTransferencia.dia_vencimento) < 1 ||
+      Number(formTransferencia.dia_vencimento) > 31
+    ) {
+      return setErro("Informe um dia de vencimento entre 1 e 31.");
+    }
+    if (!formTransferencia.data_transferencia) {
+      return setErro("Informe a data da transferência.");
+    }
+
+    setTransferindo(true);
+    setErro("");
+
+    try {
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError || !auth.user) throw new Error("Sessão inválida.");
+
+      // Confere novamente se o destino continua disponível.
+      const { data: destino, error: destinoError } = await supabase
+        .from("apartamentos")
+        .select("id,situacao")
+        .eq("id", formTransferencia.apartamento_id)
+        .single();
+
+      if (destinoError) throw destinoError;
+      if (destino.situacao === "ocupado") {
+        throw new Error("O apartamento escolhido acabou de ser ocupado. Selecione outro.");
+      }
+
+      // Encerra o contrato antigo preservando todo o histórico.
+      const { error: encerrarError } = await supabase
+        .from("contratos")
+        .update({
+          status: "encerrado",
+          data_fim: formTransferencia.data_transferencia
+        })
+        .eq("id", contrato.id);
+
+      if (encerrarError) throw encerrarError;
+
+      // Libera o apartamento anterior.
+      const { error: liberarError } = await supabase
+        .from("apartamentos")
+        .update({ situacao: "disponivel" })
+        .eq("id", contrato.apartamento_id);
+
+      if (liberarError) throw liberarError;
+
+      // Cria um novo contrato no apartamento de destino.
+      const { error: novoContratoError } = await supabase
+        .from("contratos")
+        .insert({
+          proprietario_id: auth.user.id,
+          inquilino_id: inquilino.id,
+          apartamento_id: formTransferencia.apartamento_id,
+          valor_aluguel: Number(formTransferencia.valor_aluguel),
+          dia_vencimento: Number(formTransferencia.dia_vencimento),
+          data_inicio: formTransferencia.data_transferencia,
+          data_fim: null,
+          status: "ativo"
+        });
+
+      if (novoContratoError) throw novoContratoError;
+
+      // Ocupa o novo apartamento e mantém o inquilino ativo.
+      const { error: ocuparError } = await supabase
+        .from("apartamentos")
+        .update({ situacao: "ocupado" })
+        .eq("id", formTransferencia.apartamento_id);
+
+      if (ocuparError) throw ocuparError;
+
+      const { error: inquilinoError } = await supabase
+        .from("inquilinos")
+        .update({ status: "ativo", data_saida: null })
+        .eq("id", inquilino.id);
+
+      if (inquilinoError) throw inquilinoError;
+
+      setModalTransferencia(null);
+      await carregarTudo();
+    } catch (err) {
+      setErro(err.message || "Não foi possível transferir o inquilino.");
+    } finally {
+      setTransferindo(false);
+    }
+  }
 
   function abrirNovo() {
     setForm(formularioVazio);
@@ -327,6 +474,99 @@ export default function Inquilinos() {
     }
   }
 
+  async function excluirInquilino(inquilino) {
+    const contratosDoInquilino = inquilino.contratos || [];
+
+    if (
+      !confirm(
+        `Excluir DEFINITIVAMENTE o inquilino ${inquilino.nome}?\n\n` +
+        "Também serão apagados os contratos, recebimentos e registros de anexos vinculados a este inquilino. " +
+        "Os apartamentos vinculados serão liberados.\n\n" +
+        "Esta ação não pode ser desfeita."
+      )
+    ) {
+      return;
+    }
+
+    const confirmacao = prompt(
+      'Para confirmar a exclusão definitiva, digite EXCLUIR:'
+    );
+
+    if (confirmacao !== "EXCLUIR") {
+      alert("Exclusão cancelada.");
+      return;
+    }
+
+    setErro("");
+
+    try {
+      const contratoIds = contratosDoInquilino.map(c => c.id).filter(Boolean);
+      const apartamentoIds = contratosDoInquilino
+        .map(c => c.apartamento_id)
+        .filter(Boolean);
+
+      // 1. Apaga recebimentos vinculados aos contratos do inquilino.
+      for (const contratoId of contratoIds) {
+        const { error } = await supabase
+          .from("recebimentos")
+          .delete()
+          .eq("contrato_id", contratoId);
+
+        if (error) throw error;
+      }
+
+      // 2. Apaga registros de anexos vinculados ao inquilino.
+      const { error: anexosError } = await supabase
+        .from("anexos")
+        .delete()
+        .eq("inquilino_id", inquilino.id);
+
+      if (anexosError) throw anexosError;
+
+      // 3. Tenta apagar registros do histórico vinculados ao inquilino.
+      // Se a tabela não possuir a coluna inquilino_id, não interrompe a exclusão.
+      try {
+        await supabase
+          .from("historico")
+          .delete()
+          .eq("inquilino_id", inquilino.id);
+      } catch (_) {}
+
+      // 4. Apaga os contratos.
+      const { error: contratosError } = await supabase
+        .from("contratos")
+        .delete()
+        .eq("inquilino_id", inquilino.id);
+
+      if (contratosError) throw contratosError;
+
+      // 5. Libera os apartamentos que estavam vinculados ao inquilino.
+      for (const apartamentoId of apartamentoIds) {
+        const { error } = await supabase
+          .from("apartamentos")
+          .update({ situacao: "disponivel" })
+          .eq("id", apartamentoId);
+
+        if (error) throw error;
+      }
+
+      // 6. Finalmente apaga o cadastro do inquilino.
+      const { error: inquilinoError } = await supabase
+        .from("inquilinos")
+        .delete()
+        .eq("id", inquilino.id);
+
+      if (inquilinoError) throw inquilinoError;
+
+      await carregarTudo();
+    } catch (err) {
+      setErro(
+        err.message ||
+          "Não foi possível excluir completamente o inquilino."
+      );
+    }
+  }
+
   async function alternar(inquilino) {
     const novoStatus = inquilino.status === "ativo" ? "inativo" : "ativo";
     const contratoAtivo = (inquilino.contratos || []).find(c => c.status === "ativo");
@@ -466,11 +706,25 @@ export default function Inquilinos() {
                           >
                             Editar
                           </button>
+                          {i.status === "ativo" && contrato?.status === "ativo" && (
+                            <button
+                              className="secondary"
+                              onClick={() => abrirTransferencia(i)}
+                            >
+                              Transferir
+                            </button>
+                          )}
                           <button
                             className="secondary"
                             onClick={() => alternar(i)}
                           >
                             {i.status === "ativo" ? "Desativar" : "Reativar"}
+                          </button>
+                          <button
+                            className="danger"
+                            onClick={() => excluirInquilino(i)}
+                          >
+                            Excluir
                           </button>
                         </div>
                       </td>
@@ -481,6 +735,234 @@ export default function Inquilinos() {
             </div>
           ))}
         </div>
+
+
+        <style jsx>{`
+          .tenant-table-panel {
+            overflow-x: auto;
+          }
+
+          .tenant-table-panel table {
+            width: 100%;
+            min-width: 1320px;
+            table-layout: fixed;
+          }
+
+          .tenant-table-panel th,
+          .tenant-table-panel td {
+            box-sizing: border-box;
+            vertical-align: middle;
+          }
+
+          .tenant-table-panel th:nth-child(1),
+          .tenant-table-panel td:nth-child(1) {
+            width: 14%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+
+          .tenant-table-panel th:nth-child(2),
+          .tenant-table-panel td:nth-child(2) {
+            width: 19%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            line-height: 1.35;
+          }
+
+          .tenant-table-panel th:nth-child(3),
+          .tenant-table-panel td:nth-child(3) {
+            width: 15%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel th:nth-child(4),
+          .tenant-table-panel td:nth-child(4) {
+            width: 12%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel th:nth-child(5),
+          .tenant-table-panel td:nth-child(5) {
+            width: 9%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel th:nth-child(6),
+          .tenant-table-panel td:nth-child(6) {
+            width: 11%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel th:nth-child(7),
+          .tenant-table-panel td:nth-child(7) {
+            width: 20%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel .tenant-action-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: nowrap;
+            align-items: center;
+          }
+        `}</style>
+
+        {modalTransferencia && (
+          <div
+            className="tenant-modal-backdrop"
+            onMouseDown={e => {
+              if (e.target === e.currentTarget && !transferindo) {
+                setModalTransferencia(null);
+              }
+            }}
+          >
+            <form className="tenant-modal" onSubmit={transferirInquilino}>
+              <div className="tenant-modal-title">
+                <div>
+                  <h3>Transferir inquilino</h3>
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 14 }}>
+                    {modalTransferencia.inquilino.nome} — apartamento atual:{" "}
+                    {modalTransferencia.contrato.apartamentos?.numero || "-"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="modal-close"
+                  onClick={() => setModalTransferencia(null)}
+                  disabled={transferindo}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="tenant-modal-body">
+                <div className="tenant-form-grid">
+                  <label>
+                    Novo prédio
+                    <select
+                      value={formTransferencia.predio_id}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          predio_id: e.target.value,
+                          apartamento_id: ""
+                        }))
+                      }
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      {predios.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}{p.endereco ? ` — ${p.endereco}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Novo apartamento
+                    <select
+                      value={formTransferencia.apartamento_id}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          apartamento_id: e.target.value
+                        }))
+                      }
+                      disabled={!formTransferencia.predio_id}
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      {apartamentosDisponiveisTransferencia.map(a => (
+                        <option key={a.id} value={a.id}>{a.numero}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Valor do aluguel
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={formTransferencia.valor_aluguel}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          valor_aluguel: e.target.value
+                        }))
+                      }
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Dia do vencimento
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={formTransferencia.dia_vencimento}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          dia_vencimento: e.target.value
+                        }))
+                      }
+                      required
+                    />
+                  </label>
+
+                  <label className="tenant-full">
+                    Data da transferência
+                    <input
+                      type="date"
+                      value={formTransferencia.data_transferencia}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          data_transferencia: e.target.value
+                        }))
+                      }
+                      required
+                    />
+                  </label>
+                </div>
+
+                {formTransferencia.predio_id &&
+                  apartamentosDisponiveisTransferencia.length === 0 && (
+                    <div
+                      style={{
+                        marginTop: 14,
+                        padding: 12,
+                        background: "#f8fafc",
+                        borderRadius: 8,
+                        color: "#64748b"
+                      }}
+                    >
+                      Não há apartamentos disponíveis neste prédio.
+                    </div>
+                  )}
+
+                {erro && <div className="error tenant-modal-error">{erro}</div>}
+              </div>
+
+              <div className="tenant-modal-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setModalTransferencia(null)}
+                  disabled={transferindo}
+                >
+                  Cancelar
+                </button>
+                <button className="primary" disabled={transferindo}>
+                  {transferindo ? "Transferindo..." : "Confirmar transferência"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
 
         {modalAberto && (
           <div
@@ -540,7 +1022,7 @@ export default function Inquilinos() {
                       onChange={e => alterarPredio(e.target.value)}
                     >
                       <option value="">Não informado</option>
-                      {predios.map(p => (
+                      {prediosComApartamentosDisponiveis.map(p => (
                         <option key={p.id} value={p.id}>{p.nome}{p.endereco ? ` — ${p.endereco}` : ""}</option>
                       ))}
                     </select>

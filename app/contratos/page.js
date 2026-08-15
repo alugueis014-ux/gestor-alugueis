@@ -121,7 +121,7 @@ export default function Contratos() {
       if (!mapa.has(chave)) {
         mapa.set(chave, {
           id: chave,
-          nome: predio?.nome || "Prédio não informado",
+          nome: predio?.nome || "Imóvel não informado",
           endereco: predio?.endereco || "",
           contratos: []
         });
@@ -316,7 +316,7 @@ As partes declaram que leram, compreenderam e concordam com todas as condições
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar inquilino, prédio, endereço ou apartamento"
+            placeholder="Buscar inquilino, imóvel, endereço ou apartamento"
           />
         </div>
 
@@ -597,7 +597,7 @@ As partes declaram que leram, compreenderam e concordam com todas as condições
                 <thead>
                   <tr>
                     <th>Inquilino</th>
-                    <th>Prédio</th>
+                    <th>Imóvel</th>
                     <th>Apartamento</th>
                     <th>Valor</th>
                     <th>Vencimento</th>

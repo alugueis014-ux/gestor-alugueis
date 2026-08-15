@@ -1,0 +1,13 @@
+CORREÇÃO APLICADA
+
+O mesmo inquilino agora PODE possuir dois ou mais contratos ativos,
+desde que sejam em apartamentos/imóveis diferentes.
+
+Exemplo permitido:
+- João Carlos — Imóvel A — Apto 101 — contrato ativo
+- João Carlos — Imóvel B — Apto 05 — contrato ativo
+
+Continua proibido:
+- dois contratos ativos no MESMO apartamento.
+
+Esta regra é global para todas as empresas e usuários.

@@ -215,13 +215,13 @@ export default function Relatorios() {
         </section>
 
         <section className="reports-section reports-building-section">
-          <h3>Por prédio</h3>
+          <h3>Por imóvel</h3>
 
           <div className="reports-table-wrap">
             <table className="reports-table">
               <thead>
                 <tr>
-                  <th>Prédio</th>
+                  <th>Imóvel</th>
                   <th>Endereço</th>
                   <th>Previsto</th>
                   <th>Recebido</th>
@@ -240,7 +240,7 @@ export default function Relatorios() {
                 {!carregando && porPredio.length === 0 && (
                   <tr>
                     <td colSpan="6" className="reports-empty">
-                      Nenhum prédio cadastrado.
+                      Nenhum imóvel cadastrado.
                     </td>
                   </tr>
                 )}

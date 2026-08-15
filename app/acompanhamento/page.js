@@ -34,7 +34,10 @@ function vencimentoDaCompetencia(competencia, dia) {
 }
 
 function statusReal(r) {
-  if (r.status === "pago") return "Pago";
+  const previsto = Number(r.valor_previsto || 0);
+  const recebido = Number(r.valor_recebido || 0);
+
+  if (r.status === "pago" || (previsto > 0 && recebido >= previsto)) return "Pago";
   if (r.status === "cancelado") return "Cancelado";
   return hojeISO() > r.data_vencimento ? "Atrasado" : "Pendente";
 }
@@ -82,7 +85,7 @@ export default function Acompanhamento() {
       setNomeEmpresa(empresa?.nome || "LOCADOR");
 
       const [p, c] = await Promise.all([
-        supabase.from("predios").select("id,nome,endereco").eq("empresa_id", empresaId).order("nome"),
+        supabase.from("predios").select("id,nome,endereco").eq("empresa_id", empresaId).eq("arquivado", false).order("nome"),
         supabase.from("contratos").select("id,empresa_id,valor_aluguel,dia_vencimento,data_inicio,data_fim,status").eq("empresa_id", empresaId).eq("status","ativo")
       ]);
       if (p.error) throw p.error;
@@ -120,22 +123,87 @@ export default function Acompanhamento() {
 
   async function carregarRecebimentos() {
     const competencia = `${mes}-01`;
-    const { data, error } = await supabase
-      .from("recebimentos")
-      .select(`
-        *,
-        contratos(
-          id,valor_aluguel,dia_vencimento,data_inicio,data_fim,status,
-          inquilinos(id,nome,cpf,telefone,email),
-          apartamentos(id,numero,predio_id,predios(id,nome,endereco))
-        )
-      `)
-      .eq("empresa_id", await obterEmpresaId())
-      .eq("competencia", competencia)
-      .order("data_vencimento");
-    if (error) setErro(error.message);
-    setRecebimentos(data || []);
-    setCarregando(false);
+
+    try {
+      const empresaId = await obterEmpresaId();
+
+      const { data, error } = await supabase
+        .from("recebimentos")
+        .select(`
+          *,
+          contratos!inner(
+            id,
+            empresa_id,
+            apartamento_id,
+            valor_aluguel,
+            dia_vencimento,
+            data_inicio,
+            data_fim,
+            status,
+            inquilinos(id,nome,cpf,telefone,email),
+            apartamentos(id,numero,predio_id,predios(id,nome,endereco))
+          )
+        `)
+        .eq("empresa_id", empresaId)
+        .eq("contratos.empresa_id", empresaId)
+        .eq("competencia", competencia)
+        .order("data_vencimento");
+
+      if (error) throw error;
+
+      // Registros antigos podem conter um Pago e outro Pendente
+      // para o mesmo apartamento no mesmo mês.
+      // O Acompanhamento deve mostrar somente UMA cobrança.
+      const mapa = new Map();
+
+      const pontuar = item => {
+        const status = String(item.status || "").toLowerCase();
+        const previsto = Number(item.valor_previsto || 0);
+        const recebido = Number(item.valor_recebido || 0);
+
+        // Pago sempre vence uma duplicidade pendente.
+        const pago =
+          status === "pago" || (previsto > 0 && recebido >= previsto)
+            ? 1000000000
+            : 0;
+
+        // Depois prioriza o contrato ativo.
+        const ativo =
+          String(item.contratos?.status || "").toLowerCase() === "ativo"
+            ? 100000000
+            : 0;
+
+        // Depois o registro com maior valor já recebido.
+        const valorRecebido = recebido * 1000;
+
+        // Por último, contrato de início mais recente.
+        const inicio =
+          Number(String(item.contratos?.data_inicio || "").replace(/-/g, "")) || 0;
+
+        return pago + ativo + valorRecebido + inicio;
+      };
+
+      for (const item of data || []) {
+        const apartamentoId =
+          item.contratos?.apartamento_id ||
+          item.contratos?.apartamentos?.id ||
+          item.id;
+
+        const chave = `${apartamentoId}|${item.competencia}`;
+        const atual = mapa.get(chave);
+
+        if (!atual || pontuar(item) > pontuar(atual)) {
+          mapa.set(chave, item);
+        }
+      }
+
+      setRecebimentos(Array.from(mapa.values()));
+    } catch (e) {
+      setErro(e.message || "Não foi possível carregar os recebimentos.");
+      setRecebimentos([]);
+    } finally {
+      setCarregando(false);
+    }
   }
 
   const linhas = useMemo(() => recebimentos.map(r => ({
@@ -162,7 +230,7 @@ export default function Acompanhamento() {
       if (!mapa.has(id)) {
         mapa.set(id, {
           id,
-          nome: r.predio?.nome || "Sem prédio",
+          nome: r.predio?.nome || "Sem imóvel",
           endereco: r.predio?.endereco || "",
           linhas: []
         });
@@ -267,7 +335,7 @@ export default function Acompanhamento() {
   return <AuthGuard><AppShell>
     <div className="tracking-header"><h2>Acompanhamento de Aluguéis</h2><input type="month" value={mes} onChange={e=>setMes(e.target.value)} /></div>
     <div className="tracking-filters">
-      <select value={predio} onChange={e=>setPredio(e.target.value)}><option value="">Todos os prédios</option>{predios.map(p=><option key={p.id} value={p.id}>{p.nome}{p.endereco ? ` — ${p.endereco}` : ""}</option>)}</select>
+      <select value={predio} onChange={e=>setPredio(e.target.value)}><option value="">Todos os imóveis</option>{predios.map(p=><option key={p.id} value={p.id}>{p.nome}{p.endereco ? ` — ${p.endereco}` : ""}</option>)}</select>
       <select value={status} onChange={e=>setStatus(e.target.value)}><option value="">Todos os status</option><option>Pago</option><option>Pendente</option><option>Atrasado</option></select>
       <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar inquilino ou apartamento" />
     </div>

@@ -1,0 +1,17 @@
+ALTERAÇÃO GLOBAL DE TERMINOLOGIA — PRÉDIOS → IMÓVEIS
+
+Foi alterada a terminologia visível do sistema inteiro para usar "Imóveis"
+no lugar de "Prédios".
+
+IMPORTANTE:
+- A mudança é GLOBAL para todos os usuários e empresas.
+- As empresas continuam independentes entre si.
+- NÃO foram renomeadas tabelas do Supabase.
+- A tabela interna continua se chamando "predios".
+- Campos como predio_id e relacionamentos internos continuam iguais.
+- A rota interna /predios também foi mantida para não quebrar links.
+- O que mudou foi a linguagem exibida ao usuário: menu, títulos, botões,
+  filtros, mensagens, relatórios, dashboard, backup e demais telas.
+
+O pacote foi limpo de .git, .env.local, .env.vercel, caches, backups locais
+e arquivos temporários de credenciais.

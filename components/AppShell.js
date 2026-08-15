@@ -5,10 +5,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 import Icon from "./Icon";
+import { obterEmpresaAtual } from "../lib/empresa";
 
 const links = [
   ["/dashboard", "Início", "home"],
-  ["/predios", "Prédios", "building"],
+  ["/predios", "Imóveis", "building"],
   ["/apartamentos", "Apartamentos", "door"],
   ["/disponiveis", "Disponíveis para Aluguel", "key"],
   ["/inquilinos", "Inquilinos", "users"],
@@ -43,63 +44,21 @@ export default function AppShell({ children }) {
   const [empresaNome, setEmpresaNome] = useState("Minha empresa");
   const [empresaId, setEmpresaId] = useState(null);
 
-  async function obterVinculoEmpresa(userId, incluirNome = false) {
-    const campos = incluirNome
-      ? "empresa_id, empresas(nome)"
-      : "empresa_id";
-
-    // Estrutura atual do projeto: usuario_id.
-    let consulta = await supabase
-      .from("empresa_usuarios")
-      .select(campos)
-      .eq("usuario_id", userId)
-      .limit(1)
-      .maybeSingle();
-
-    // Compatibilidade com instalações que usem user_id.
-    if (
-      consulta.error &&
-      /usuario_id|column|schema cache/i.test(consulta.error.message || "")
-    ) {
-      consulta = await supabase
-        .from("empresa_usuarios")
-        .select(campos)
-        .eq("user_id", userId)
-        .limit(1)
-        .maybeSingle();
-    }
-
-    if (consulta.error) throw consulta.error;
-    if (!consulta.data?.empresa_id) {
-      throw new Error("Não foi possível identificar a empresa do usuário.");
-    }
-
-    return consulta.data;
-  }
-
   useEffect(() => {
     let ativo = true;
 
     async function carregarEmpresa() {
-      const { data: auth, error: authError } = await supabase.auth.getUser();
-      if (authError || !auth.user || !ativo) return;
-
-      let vinculo;
       try {
-        vinculo = await obterVinculoEmpresa(auth.user.id, true);
+        const contexto = await obterEmpresaAtual({ incluirNome: true });
+        if (!ativo) return;
+
+        setEmpresaId(contexto.empresaId);
+        if (contexto.empresaNome) {
+          setEmpresaNome(contexto.empresaNome);
+        }
       } catch (_) {
-        return;
+        // AuthGuard e as páginas tratam os erros de sessão/vínculo.
       }
-
-      if (!ativo) return;
-
-      setEmpresaId(vinculo.empresa_id);
-
-      const nome = Array.isArray(vinculo.empresas)
-        ? vinculo.empresas[0]?.nome
-        : vinculo.empresas?.nome;
-
-      if (nome) setEmpresaNome(nome);
     }
 
     carregarEmpresa();
@@ -134,8 +93,8 @@ export default function AppShell({ children }) {
       let idEmpresa = empresaId;
 
       if (!idEmpresa) {
-        const vinculo = await obterVinculoEmpresa(auth.user.id);
-        idEmpresa = vinculo.empresa_id;
+        const contexto = await obterEmpresaAtual();
+        idEmpresa = contexto.empresaId;
       }
 
       const dados = {};

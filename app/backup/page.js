@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { obterEmpresaAtual, obterEmpresaId } from "../../lib/empresa";
 
 const TABELAS_EXPORTACAO = [
   "predios",
@@ -37,132 +38,44 @@ const ORDEM_EXCLUSAO = [
   "predios"
 ];
 
-const DESTINO_EMAIL = "alaelsonvereador@hotmail.com.br";
-const DESTINO_EMPRESA_ID = "3bf9034a-8319-42cf-b50f-6e7d595ceb04";
-const DESTINO_EMPRESA_NOME = "GESTÃO DE ALUGUEL";
 
 
 async function obterEscopoDados() {
-  const { data: auth, error: authError } = await supabase.auth.getUser();
+  const contexto = await obterEmpresaAtual({ incluirNome: true });
 
-  if (authError || !auth?.user) {
-    throw new Error("Sessão inválida. Entre novamente no sistema.");
-  }
-
-  // Primeiro tenta a estrutura nova (multiempresa).
-  let consulta = await supabase
-    .from("empresa_usuarios")
-    .select("empresa_id")
-    .eq("usuario_id", auth.user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (
-    consulta.error &&
-    /usuario_id|column|schema cache/i.test(consulta.error.message || "") &&
-    !/empresa_usuarios/i.test(consulta.error.message || "")
-  ) {
-    consulta = await supabase
-      .from("empresa_usuarios")
-      .select("empresa_id")
-      .eq("user_id", auth.user.id)
-      .limit(1)
-      .maybeSingle();
-  }
-
-  if (!consulta.error && consulta.data?.empresa_id) {
-    return {
-      modo: "multiempresa",
-      campo: "empresa_id",
-      id: consulta.data.empresa_id,
-      userId: auth.user.id
-    };
-  }
-
-  // Banco antigo: não existe empresa_usuarios e os registros pertencem
-  // diretamente ao usuário por proprietario_id.
-  if (
-    consulta.error &&
-    /empresa_usuarios|schema cache|could not find the table|relation .* does not exist/i.test(
-      consulta.error.message || ""
-    )
-  ) {
-    return {
-      modo: "legado",
-      campo: "proprietario_id",
-      id: auth.user.id,
-      userId: auth.user.id
-    };
-  }
-
-  if (consulta.error) throw consulta.error;
-
-  // Compatibilidade adicional: se não houver vínculo, tenta o formato legado.
   return {
-    modo: "legado",
-    campo: "proprietario_id",
-    id: auth.user.id,
-    userId: auth.user.id
+    modo: "multiempresa",
+    campo: "empresa_id",
+    id: contexto.empresaId,
+    userId: contexto.userId,
+    email: contexto.email,
+    empresaNome: contexto.empresaNome || "Empresa"
   };
 }
 
 async function buscarTabelaNoEscopo(tabela, escopo) {
-  let consulta = await supabase
+  const { data, error } = await supabase
     .from(tabela)
     .select("*")
-    .eq(escopo.campo, escopo.id);
+    .eq("empresa_id", escopo.id);
 
-  if (!consulta.error) return consulta.data || [];
-
-  // Algumas tabelas antigas podem não ter proprietario_id.
-  // Nesses casos, a própria RLS do projeto antigo limita os dados do usuário.
-  if (
-    escopo.modo === "legado" &&
-    /proprietario_id|column|schema cache/i.test(consulta.error.message || "")
-  ) {
-    consulta = await supabase
-      .from(tabela)
-      .select("*");
-
-    if (!consulta.error) return consulta.data || [];
+  if (error) {
+    throw new Error(`Erro ao ler ${tabela}: ${error.message}`);
   }
 
-  throw new Error(`Erro ao ler ${tabela}: ${consulta.error.message}`);
+  return data || [];
 }
 
 async function obterContextoImportacao() {
-  const escopo = await obterEscopoDados();
-  const { data: auth, error: authError } = await supabase.auth.getUser();
-
-  if (authError || !auth?.user) {
-    throw new Error("Sessão inválida. Entre novamente no sistema.");
-  }
-
-  if ((auth.user.email || "").toLowerCase() !== DESTINO_EMAIL.toLowerCase()) {
-    throw new Error(
-      `Para restaurar este backup na ${DESTINO_EMPRESA_NOME}, entre com ${DESTINO_EMAIL}.`
-    );
-  }
-
-  if (escopo.modo !== "multiempresa") {
-    throw new Error(
-      "A importação nesta versão deve ser feita no banco multiempresa."
-    );
-  }
-
-  if (escopo.id !== DESTINO_EMPRESA_ID) {
-    throw new Error(
-      `A conta ${DESTINO_EMAIL} não está vinculada à empresa ${DESTINO_EMPRESA_NOME}.`
-    );
-  }
+  const contexto = await obterEmpresaAtual({ incluirNome: true });
 
   return {
-    empresaId: DESTINO_EMPRESA_ID,
-    userId: auth.user.id,
-    email: auth.user.email
+    empresaId: contexto.empresaId,
+    empresaNome: contexto.empresaNome || "Empresa",
+    userId: contexto.userId,
+    email: contexto.email
   };
 }
-
 
 function dataHoraBR(data) {
   return new Date(data).toLocaleString("pt-BR");
@@ -426,20 +339,43 @@ export default function Backup() {
   const [mensagem, setMensagem] = useState("");
   const [erro, setErro] = useState("");
   const [historico, setHistorico] = useState([]);
+  const [empresaAtualId, setEmpresaAtualId] = useState(null);
+  const [empresaAtualNome, setEmpresaAtualNome] = useState("Empresa");
 
   useEffect(() => {
-    try {
-      const salvo = JSON.parse(localStorage.getItem("historico_backups") || "[]");
-      setHistorico(Array.isArray(salvo) ? salvo : []);
-    } catch {
-      setHistorico([]);
+    let ativo = true;
+
+    async function carregarContextoEHistorico() {
+      try {
+        const contexto = await obterEmpresaAtual({ incluirNome: true });
+        if (!ativo) return;
+
+        setEmpresaAtualId(contexto.empresaId);
+        setEmpresaAtualNome(contexto.empresaNome || "Empresa");
+
+        const chave = `historico_backups_${contexto.empresaId}`;
+        const salvo = JSON.parse(localStorage.getItem(chave) || "[]");
+        setHistorico(Array.isArray(salvo) ? salvo : []);
+      } catch {
+        if (ativo) {
+          setHistorico([]);
+          setEmpresaAtualId(null);
+        }
+      }
     }
+
+    carregarContextoEHistorico();
+    return () => { ativo = false; };
   }, []);
 
   function salvarHistorico(novo) {
     const atualizado = [novo, ...historico].slice(0, 20);
     setHistorico(atualizado);
-    localStorage.setItem("historico_backups", JSON.stringify(atualizado));
+
+    if (empresaAtualId) {
+      const chave = `historico_backups_${empresaAtualId}`;
+      localStorage.setItem(chave, JSON.stringify(atualizado));
+    }
   }
 
   async function buscarDados() {
@@ -454,9 +390,10 @@ export default function Backup() {
       sistema: "Gestão de Aluguéis",
       versao_backup: 2,
       criado_em: new Date().toISOString(),
-      origem: escopo.modo,
-      empresa_id_original: escopo.modo === "multiempresa" ? escopo.id : null,
-      proprietario_id_original: escopo.modo === "legado" ? escopo.id : null,
+      origem: "multiempresa",
+      empresa_id_original: escopo.id,
+      empresa_nome_original: escopo.empresaNome || "",
+      proprietario_id_original: null,
       observacao:
         "O JSON contém os registros do banco. Arquivos físicos do Supabase Storage não estão incluídos.",
       dados
@@ -511,8 +448,10 @@ export default function Backup() {
     event.target.value = "";
     if (!arquivo) return;
 
+    const contexto = await obterEmpresaAtual({ incluirNome: true });
+
     if (!confirm(
-      `Restaurar este backup em ${DESTINO_EMPRESA_NOME} (${DESTINO_EMAIL})? ` +
+      `Restaurar este backup em ${contexto.empresaNome || "esta empresa"}? ` +
       "Os dados atuais desta empresa serão apagados e substituídos pelos dados do arquivo selecionado."
     )) return;
 
@@ -528,7 +467,7 @@ export default function Backup() {
         throw new Error("Arquivo de backup inválido.");
       }
 
-      const { empresaId, userId } = await obterContextoImportacao();
+      const { empresaId, empresaNome, userId } = await obterContextoImportacao();
 
       // Antes de apagar qualquer coisa, guarda em memória uma cópia completa
       // dos dados atuais da empresa. Se a importação falhar no meio,
@@ -576,7 +515,7 @@ export default function Backup() {
       });
 
       setMensagem(
-        `Backup importado com sucesso em ${DESTINO_EMPRESA_NOME}. Atualize as telas do sistema.`
+        `Backup importado com sucesso em ${empresaNome}. Atualize as telas do sistema.`
       );
     } catch (e) {
       const msg = e.message || "Não foi possível importar o backup.";
@@ -591,9 +530,11 @@ export default function Backup() {
   }
 
   async function apagarTudo() {
+    const contexto = await obterEmpresaAtual({ incluirNome: true });
+
     const primeira = confirm(
-      "ATENÇÃO: todos os prédios, apartamentos, inquilinos, contratos, " +
-      "recebimentos e históricos serão apagados. Deseja continuar?"
+      `ATENÇÃO: todos os dados de ${contexto.empresaNome || "esta empresa"} serão apagados. ` +
+      "Isso inclui imóveis, apartamentos, inquilinos, contratos, recebimentos e históricos. Deseja continuar?"
     );
     if (!primeira) return;
 
@@ -610,7 +551,7 @@ export default function Backup() {
     setErro("");
 
     try {
-      const { empresaId } = await obterContextoImportacao();
+      const empresaId = contexto.empresaId;
 
       for (const tabela of ORDEM_EXCLUSAO) {
         const { error } = await supabase
@@ -644,7 +585,7 @@ export default function Backup() {
 
           <div className="backup-includes">
             <strong>O backup inclui:</strong>
-            <span>Prédios</span>
+            <span>Imóveis</span>
             <span>Apartamentos</span>
             <span>Inquilinos</span>
             <span>Contratos</span>
@@ -697,7 +638,7 @@ export default function Backup() {
         </section>
 
         <section className="backup-history-panel">
-          <h3>Histórico neste navegador</h3>
+          <h3>Histórico neste navegador — {empresaAtualNome}</h3>
 
           <div className="backup-history-table-wrap">
             <table className="backup-history-table">

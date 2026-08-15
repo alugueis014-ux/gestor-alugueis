@@ -6,7 +6,7 @@ A Dashboard agora consulta a tabela recebimentos para o mês selecionado e calcu
 - Pendente
 - Pagos
 - Em aberto
-- Totais por prédio
+- Totais por imóvel
 
 Para aplicar apenas a correção, substitua:
 app/dashboard/page.js

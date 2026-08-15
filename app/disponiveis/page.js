@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { obterEmpresaId } from "../../lib/empresa";
 
 const rotulos = {
   disponivel: "Disponível",
@@ -32,25 +33,43 @@ export default function Disponiveis() {
     setCarregando(true);
     setErro("");
 
-    const [p, a, c] = await Promise.all([
-      supabase.from("predios").select("id,nome,endereco").order("nome"),
-      supabase
-        .from("apartamentos")
-        .select("id,numero,situacao,observacoes,predio_id,predios(nome,endereco)")
-        .order("numero"),
-      supabase
-        .from("contratos")
-        .select("id,apartamento_id,status,data_inicio,data_fim")
-        .eq("status", "ativo")
-    ]);
+    try {
+      const empresaId = await obterEmpresaId();
 
-    const falha = p.error || a.error || c.error;
-    if (falha) setErro(falha.message);
+      const [p, a, c] = await Promise.all([
+        supabase
+          .from("predios")
+          .select("id,nome,endereco")
+          .eq("empresa_id", empresaId)
+          .eq("arquivado", false)
+          .order("nome"),
+        supabase
+          .from("apartamentos")
+          .select("id,numero,situacao,observacoes,predio_id,predios!inner(nome,endereco,arquivado)")
+          .eq("empresa_id", empresaId)
+          .eq("predios.arquivado", false)
+          .order("numero"),
+        supabase
+          .from("contratos")
+          .select("id,apartamento_id,status,data_inicio,data_fim")
+          .eq("empresa_id", empresaId)
+          .eq("status", "ativo")
+      ]);
 
-    setPredios(p.data || []);
-    setApartamentos(a.data || []);
-    setContratosAtivos(c.data || []);
-    setCarregando(false);
+      const falha = p.error || a.error || c.error;
+      if (falha) throw falha;
+
+      setPredios(p.data || []);
+      setApartamentos(a.data || []);
+      setContratosAtivos(c.data || []);
+    } catch (e) {
+      setErro(e.message || "Não foi possível carregar os imóveis disponíveis.");
+      setPredios([]);
+      setApartamentos([]);
+      setContratosAtivos([]);
+    } finally {
+      setCarregando(false);
+    }
   }
 
   const apartamentosComSituacaoReal = useMemo(() => {
@@ -102,7 +121,7 @@ export default function Disponiveis() {
         grupos.set(a.predio_id, {
           predio: {
             id: a.predio_id,
-            nome: a.predios?.nome || "Prédio não informado",
+            nome: a.predios?.nome || "Imóvel não informado",
             endereco: a.predios?.endereco || ""
           },
           apartamentos: []
@@ -149,7 +168,7 @@ export default function Disponiveis() {
 
         <div className="available-filters">
           <select value={predio} onChange={e => setPredio(e.target.value)}>
-            <option value="">Todos os prédios</option>
+            <option value="">Todos os imóveis</option>
             {predios.map(p => (
               <option key={p.id} value={p.id}>
                 {p.nome}{p.endereco ? ` — ${p.endereco}` : ""}

@@ -177,26 +177,27 @@ export default function ControleMensal() {
             display:flex;
             justify-content:space-between;
             align-items:end;
-            gap:16px;
-            margin-bottom:20px;
+            gap:12px;
+            margin-bottom:14px;
             flex-wrap:wrap;
           }
-          .controle-mensal-header h2{margin:0 0 4px}
-          .controle-mensal-header p{margin:0;color:#64748b}
+          .controle-mensal-header h2{margin:0 0 2px;font-size:20px;line-height:1.15}
+          .controle-mensal-header p{margin:0;color:#64748b;font-size:12px}
           .controle-mensal-actions{
             display:flex;
             align-items:end;
-            gap:10px;
+            gap:8px;
             flex-wrap:wrap;
           }
           .controle-mensal-actions label{
             display:grid;
-            gap:6px;
+            gap:4px;
             font-weight:600;
+            font-size:12px;
           }
           .controle-mensal-actions input{
-            min-height:40px;
-            padding:8px 10px;
+            min-height:34px;
+            padding:6px 9px;
             border:1px solid #cbd5e1;
             border-radius:8px;
           }
@@ -250,24 +251,24 @@ export default function ControleMensal() {
           .controle-mensal-grid{
             display:grid;
             grid-template-columns:1fr;
-            gap:8px;
+            gap:6px;
             align-items:start;
           }
           .controle-mensal-predio{
             margin-bottom:0;
-            padding:10px;
+            padding:7px 8px;
           }
           .controle-mensal-predio-head{
-            margin-bottom:6px;
+            margin-bottom:4px;
           }
           .controle-mensal-predio-head h3{
-            font-size:15px;
-            line-height:1.15;
+            font-size:14px;
+            line-height:1.1;
           }
           .controle-mensal-predio-head div{
             font-size:10px;
-            margin-top:2px;
-            line-height:1.2;
+            margin-top:1px;
+            line-height:1.1;
           }
           .controle-mensal-table{
             font-size:10px;
@@ -278,101 +279,236 @@ export default function ControleMensal() {
             line-height:1.15;
           }
           .controle-mensal-data{
-            min-width:70px;
-            height:18px;
+            min-width:68px;
+            height:16px;
           }
           .controle-mensal-check{
-            width:16px;
-            height:16px;
-            font-size:12px;
+            width:15px;
+            height:15px;
+            font-size:11px;
             border-width:1.5px;
           }
 
+
+          @media screen{
+            .controle-mensal-predio.panel{
+              border-radius:8px;
+              box-shadow:0 2px 8px rgba(30,60,90,.04);
+            }
+
+            .controle-mensal-table th{
+              font-size:10px;
+              padding-top:5px;
+              padding-bottom:5px;
+            }
+
+            .controle-mensal-table td{
+              font-size:11px;
+            }
+
+            .controle-mensal-actions .primary{
+              min-height:34px;
+              padding:6px 11px;
+              font-size:12px;
+            }
+          }
 
           .controle-mensal-page-footer{
             display:none;
           }
 
+          .controle-print-header{
+            display:none;
+          }
+
           @media print{
-            @page{size:A4 portrait;margin:15mm}
+            @page{
+              size:A4 portrait;
+              margin:10mm 9mm 12mm 9mm;
+
+              @bottom-center{
+                content:"Página " counter(page) " de " counter(pages);
+                font-size:9px;
+                color:#475569;
+              }
+            }
+
             .sidebar,
             .controle-mensal-actions,
-            .logout-button{
+            .logout-button,
+            .controle-mensal-header,
+            .controle-mensal-page-footer{
               display:none !important;
             }
+
+            html,
+            body{
+              margin:0 !important;
+              padding:0 !important;
+              background:#fff !important;
+              -webkit-print-color-adjust:exact;
+              print-color-adjust:exact;
+            }
+
             .app-shell{
               display:block !important;
             }
+
             .content{
               margin:0 !important;
               padding:0 !important;
               width:100% !important;
+              max-width:none !important;
             }
-            body{
-              background:white !important;
-              counter-reset: page;
-            }
-            .controle-mensal-page-footer{
+
+            .controle-print-header{
               display:block !important;
-              position:fixed;
-              left:0;
-              right:0;
-              bottom:-8mm;
               text-align:center;
+              margin:0 0 7px 0;
+            }
+
+            .controle-print-header h2{
+              margin:0;
+              font-size:18px;
+              line-height:1.15;
+              color:#0f2d52;
+            }
+
+            .controle-print-header div{
+              margin-top:2px;
               font-size:10px;
-              color:#475569;
+              line-height:1.2;
+              color:#64748b;
             }
-            .controle-mensal-page-footer::after{
-              content:" " counter(page);
-            }
-            .controle-mensal-header{
-              margin-bottom:14px;
-            }
+
             .controle-mensal-grid{
               display:block !important;
             }
+
             .controle-mensal-predio{
-              break-inside:auto;
-              page-break-inside:auto;
-              padding:8px !important;
-              margin:0 0 8px 0 !important;
+              display:block !important;
+              margin:0 !important;
+              padding:0 !important;
+              border:0 !important;
+              border-radius:0 !important;
               box-shadow:none !important;
+              background:transparent !important;
+              break-inside:auto !important;
+              page-break-inside:auto !important;
             }
+
             .controle-mensal-predio-head{
-              margin-bottom:4px !important;
+              margin:0 !important;
+              padding:4px 6px 3px !important;
+              border:1px solid #cbd5e1 !important;
+              border-bottom:0 !important;
+              background:#f8fafc !important;
+              break-after:avoid !important;
+              page-break-after:avoid !important;
             }
+
             .controle-mensal-predio-head h3{
-              font-size:16px !important;
+              margin:0 !important;
+              font-size:11px !important;
+              line-height:1.12 !important;
+              color:#0f2d52 !important;
             }
+
             .controle-mensal-predio-head div{
-              font-size:11px !important;
+              margin-top:1px !important;
+              font-size:8px !important;
+              line-height:1.1 !important;
+              color:#64748b !important;
             }
+
             .controle-mensal-table{
-              font-size:11px !important;
               width:100% !important;
+              border-collapse:collapse !important;
+              table-layout:fixed !important;
+              margin:0 0 4px 0 !important;
+              font-size:9px !important;
+              break-inside:auto !important;
+              page-break-inside:auto !important;
             }
+
             .controle-mensal-table thead{
-              display:table-header-group;
+              display:table-header-group !important;
             }
+
+            .controle-mensal-table tbody{
+              display:table-row-group !important;
+            }
+
             .controle-mensal-table tr{
-              break-inside:avoid;
-              page-break-inside:avoid;
+              break-inside:avoid !important;
+              page-break-inside:avoid !important;
             }
+
             .controle-mensal-table th,
             .controle-mensal-table td{
-              padding:6px 7px !important;
+              box-sizing:border-box !important;
+              border:1px solid #cbd5e1 !important;
+              padding:3px 5px !important;
+              line-height:1.1 !important;
+              vertical-align:middle !important;
+              height:auto !important;
             }
+
+            .controle-mensal-table th{
+              background:#eef4fa !important;
+              font-weight:700 !important;
+            }
+
+            .controle-mensal-table th:nth-child(1),
+            .controle-mensal-table td:nth-child(1){
+              width:11% !important;
+            }
+
+            .controle-mensal-table th:nth-child(2),
+            .controle-mensal-table td:nth-child(2){
+              width:39% !important;
+            }
+
+            .controle-mensal-table th:nth-child(3),
+            .controle-mensal-table td:nth-child(3){
+              width:15% !important;
+            }
+
+            .controle-mensal-table th:nth-child(4),
+            .controle-mensal-table td:nth-child(4){
+              width:24% !important;
+            }
+
+            .controle-mensal-table th:nth-child(5),
+            .controle-mensal-table td:nth-child(5){
+              width:11% !important;
+              text-align:center !important;
+            }
+
             .controle-mensal-data{
-              min-width:85px !important;
-              height:20px !important;
+              min-width:72px !important;
+              width:72px !important;
+              height:13px !important;
+              border-bottom:1px solid #64748b !important;
             }
+
             .controle-mensal-check{
-              width:18px !important;
-              height:18px !important;
-              font-size:13px !important;
+              width:14px !important;
+              height:14px !important;
+              font-size:10px !important;
+              border-width:1px !important;
+            }
+
+            .error{
+              display:none !important;
             }
           }
         `}</style>
+
+        <div className="controle-print-header" aria-hidden="true">
+          <h2>Controle Mensal</h2>
+          <div>Mês de referência: {mes.split("-").reverse().join("/")}</div>
+        </div>
 
         <div className="controle-mensal-header">
           <div>
@@ -456,9 +592,6 @@ export default function ControleMensal() {
           </div>
         )}
 
-        <div className="controle-mensal-page-footer" aria-hidden="true">
-          Página
-        </div>
 
       </AppShell>
     </AuthGuard>

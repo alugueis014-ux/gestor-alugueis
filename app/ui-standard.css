@@ -413,7 +413,7 @@ tbody tr:hover td {
   margin-bottom: 16px !important;
 }
 
-/* Prédios / grupos */
+/* Imóveis / grupos */
 .contract-building-header,
 .closed-toggle {
   color: var(--ga-text) !important;
@@ -550,7 +550,7 @@ tbody tr:hover td {
    V10 — DESTAQUE DOS PRÉDIOS + ÍCONES NO MENU
    ========================================================= */
 
-/* Nomes de prédios com maior destaque nas telas principais */
+/* Nomes de imóveis com maior destaque nas telas principais */
 .monthly-summary .summary-table tbody td:first-child strong {
   display: block !important;
   font-size: 18px !important;
@@ -672,7 +672,7 @@ tbody tr:hover td {
 }
 
 
-/* V13 — linha inteira do prédio abre/fecha os apartamentos */
+/* V13 — linha inteira do imóvel abre/fecha os apartamentos */
 .summary-building-row {
   cursor: pointer !important;
 }
@@ -1178,7 +1178,7 @@ tbody tr:hover td {
   line-height: 1.15 !important;
 }
 
-/* Prédios / grupos */
+/* Imóveis / grupos */
 .contract-building-header,
 .tracking-building-head,
 .receipts-building-head,
@@ -1472,5 +1472,107 @@ tbody tr:hover td {
   .tracking-modal-actions button,
   .receipts-modal-actions button {
     width: 100% !important;
+  }
+}
+
+
+/* Recebimentos — cards interativos de filtro */
+.receipts-filter-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 16px;
+}
+
+.receipts-filter-card {
+  position: relative;
+  min-height: 104px !important;
+  padding: 15px 17px !important;
+  border: 1px solid var(--ga-border) !important;
+  border-radius: var(--af-card-radius) !important;
+  background: #fff !important;
+  box-shadow: var(--af-shadow-card) !important;
+  color: var(--ga-text) !important;
+  text-align: left;
+  cursor: pointer;
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-start !important;
+  justify-content: center;
+  gap: 4px !important;
+  white-space: normal !important;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.receipts-filter-card:hover {
+  transform: translateY(-1px);
+  border-color: #9fc8ef !important;
+  box-shadow: 0 8px 22px rgba(25,118,210,.10) !important;
+}
+
+.receipts-filter-card.active {
+  border-color: var(--ga-primary) !important;
+  box-shadow: 0 0 0 3px rgba(25,118,210,.12), var(--af-shadow-card) !important;
+}
+
+.receipts-filter-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+}
+
+.receipts-filter-card.paid::after { background: #22a06b; }
+.receipts-filter-card.pending::after { background: #e3a008; }
+.receipts-filter-card.overdue::after { background: #d92d20; }
+
+.receipts-filter-card-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ga-text-soft);
+}
+
+.receipts-filter-card strong {
+  font-size: 25px;
+  line-height: 1.05;
+  color: var(--ga-text);
+}
+
+.receipts-filter-card small {
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--ga-text-soft);
+}
+
+.receipts-filter-active {
+  margin: -4px 0 14px;
+  font-size: 12px;
+  color: var(--ga-text-soft);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.receipts-filter-active button {
+  min-height: 28px !important;
+  padding: 4px 8px !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--ga-primary) !important;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .receipts-filter-cards {
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+
+  .receipts-filter-card {
+    min-height: 82px !important;
   }
 }

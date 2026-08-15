@@ -25,20 +25,31 @@ export default function Predios() {
   const [apartamentosDoPredio, setApartamentosDoPredio] = useState([]);
   const [novosApartamentos, setNovosApartamentos] = useState([""]);
   const [salvandoApartamentos, setSalvandoApartamentos] = useState(false);
+  const [mostrarArquivados, setMostrarArquivados] = useState(false);
 
   useEffect(() => {
     carregar();
-  }, []);
+  }, [mostrarArquivados]);
 
   async function carregar() {
     setErro("");
-    const { data, error } = await supabase
-      .from("predios")
-      .select("*")
-      .order("nome");
 
-    if (error) setErro(error.message);
-    else setLista(data || []);
+    try {
+      const empresaId = await obterEmpresaId();
+
+      const { data, error } = await supabase
+        .from("predios")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .eq("arquivado", mostrarArquivados)
+        .order("nome");
+
+      if (error) throw error;
+      setLista(data || []);
+    } catch (e) {
+      setErro(e.message || "Não foi possível carregar os imóveis.");
+      setLista([]);
+    }
   }
 
   function abrirNovo() {
@@ -131,7 +142,7 @@ export default function Predios() {
       };
 
       if (!payload.nome) {
-        throw new Error("Informe o nome do prédio.");
+        throw new Error("Informe o nome do imóvel.");
       }
 
       let predioId = editando;
@@ -140,7 +151,8 @@ export default function Predios() {
         const { error } = await supabase
           .from("predios")
           .update(payload)
-          .eq("id", editando);
+          .eq("id", editando)
+          .eq("empresa_id", empresaId);
 
         if (error) throw error;
       } else {
@@ -179,7 +191,7 @@ export default function Predios() {
       setForm(vazio);
       await carregar();
     } catch (e) {
-      setErro(e.message || "Não foi possível salvar o prédio.");
+      setErro(e.message || "Não foi possível salvar o imóvel.");
     } finally {
       setSalvando(false);
     }
@@ -310,16 +322,126 @@ export default function Predios() {
     }
   }
 
-  async function excluir(id) {
-    if (!confirm("Excluir este prédio?")) return;
+  async function excluir(imovel) {
+    setErro("");
 
-    const { error } = await supabase
-      .from("predios")
-      .delete()
-      .eq("id", id);
+    try {
+      const empresaId = await obterEmpresaId();
 
-    if (error) return setErro(error.message);
-    carregar();
+      // Verifica se o imóvel possui contratos.
+      const { data: contratos, error: contratosError } = await supabase
+        .from("contratos")
+        .select("id,status")
+        .eq("empresa_id", empresaId)
+        .eq("predio_id", imovel.id);
+
+      if (contratosError) throw contratosError;
+
+      const contratosDoImovel = contratos || [];
+      const possuiContratoAtivo = contratosDoImovel.some(
+        c => String(c.status || "").toLowerCase() === "ativo"
+      );
+
+      if (possuiContratoAtivo) {
+        throw new Error(
+          "Este imóvel possui contrato ativo e não pode ser excluído nem arquivado. Encerre o contrato primeiro."
+        );
+      }
+
+      // Se já houve contrato, preserva todo o histórico e arquiva.
+      if (contratosDoImovel.length > 0) {
+        const confirmar = confirm(
+          `O imóvel "${imovel.nome}" possui histórico de contratos e não pode ser excluído definitivamente.\n\nDeseja arquivá-lo? Os contratos, pagamentos e históricos anteriores serão preservados.`
+        );
+
+        if (!confirmar) return;
+
+        const { error: archiveError } = await supabase
+          .from("predios")
+          .update({
+            arquivado: true,
+            arquivado_em: new Date().toISOString()
+          })
+          .eq("id", imovel.id)
+          .eq("empresa_id", empresaId);
+
+        if (archiveError) throw archiveError;
+
+        await carregar();
+        return;
+      }
+
+      const confirmar = confirm(
+        `Excluir definitivamente o imóvel "${imovel.nome}"?\n\nComo ele não possui histórico de contratos, os apartamentos cadastrados nele também serão excluídos.`
+      );
+      if (!confirmar) return;
+
+      // Sem histórico de contrato, os apartamentos podem ser removidos primeiro.
+      const { error: apartamentosError } = await supabase
+        .from("apartamentos")
+        .delete()
+        .eq("empresa_id", empresaId)
+        .eq("predio_id", imovel.id);
+
+      if (apartamentosError) throw apartamentosError;
+
+      const { error: predioError } = await supabase
+        .from("predios")
+        .delete()
+        .eq("id", imovel.id)
+        .eq("empresa_id", empresaId);
+
+      if (predioError) {
+        // Se outra tabela histórica ainda referenciar o imóvel, preserva por arquivamento.
+        if (/foreign key|violates foreign key constraint/i.test(predioError.message || "")) {
+          const { error: archiveError } = await supabase
+            .from("predios")
+            .update({
+              arquivado: true,
+              arquivado_em: new Date().toISOString()
+            })
+            .eq("id", imovel.id)
+            .eq("empresa_id", empresaId);
+
+          if (archiveError) throw archiveError;
+
+          setErro(
+            "O imóvel possui registros históricos vinculados. Em vez de excluir, ele foi arquivado para preservar os dados."
+          );
+          await carregar();
+          return;
+        }
+
+        throw predioError;
+      }
+
+      await carregar();
+    } catch (e) {
+      setErro(e.message || "Não foi possível excluir ou arquivar o imóvel.");
+    }
+  }
+
+  async function restaurar(imovel) {
+    setErro("");
+
+    try {
+      const empresaId = await obterEmpresaId();
+
+      const { error } = await supabase
+        .from("predios")
+        .update({
+          arquivado: false,
+          arquivado_em: null
+        })
+        .eq("id", imovel.id)
+        .eq("empresa_id", empresaId);
+
+      if (error) throw error;
+
+      await carregar();
+    } catch (e) {
+      setErro(e.message || "Não foi possível restaurar o imóvel.");
+    }
   }
 
   return (
@@ -335,13 +457,33 @@ export default function Predios() {
           }}
         >
           <div>
-            <h2>Prédios</h2>
-            <p>Cadastre seus residenciais</p>
+            <h2>Imóveis</h2>
+            <p>Cadastre e gerencie seus imóveis</p>
           </div>
 
-          <button className="primary" onClick={abrirNovo}>
-            Cadastrar prédio
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className={!mostrarArquivados ? "primary" : "secondary"}
+              onClick={() => setMostrarArquivados(false)}
+            >
+              Imóveis ativos
+            </button>
+
+            <button
+              type="button"
+              className={mostrarArquivados ? "primary" : "secondary"}
+              onClick={() => setMostrarArquivados(true)}
+            >
+              Arquivados
+            </button>
+
+            {!mostrarArquivados && (
+              <button className="primary" onClick={abrirNovo}>
+                Cadastrar imóvel
+              </button>
+            )}
+          </div>
         </div>
 
         {erro && !modalAberto && <div className="error">{erro}</div>}
@@ -362,18 +504,26 @@ export default function Predios() {
                   <td>{p.nome}</td>
                   <td>{p.endereco || "—"}</td>
                   <td>
-                    <button
-                      className="secondary"
-                      onClick={() => abrirCadastroApartamentos(p)}
-                    >
-                      Gerenciar apartamentos
-                    </button>{" "}
-                    <button className="secondary" onClick={() => editar(p)}>
-                      Editar
-                    </button>{" "}
-                    <button className="danger" onClick={() => excluir(p.id)}>
-                      Excluir
-                    </button>
+                    {mostrarArquivados ? (
+                      <button className="primary" onClick={() => restaurar(p)}>
+                        Restaurar
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          className="secondary"
+                          onClick={() => abrirCadastroApartamentos(p)}
+                        >
+                          Gerenciar apartamentos
+                        </button>{" "}
+                        <button className="secondary" onClick={() => editar(p)}>
+                          Editar
+                        </button>{" "}
+                        <button className="danger" onClick={() => excluir(p)}>
+                          Excluir
+                        </button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -390,7 +540,7 @@ export default function Predios() {
           >
             <form className="tenant-modal" onSubmit={salvar}>
               <div className="tenant-modal-title">
-                <h3>{editando ? "Editar prédio" : "Cadastrar prédio"}</h3>
+                <h3>{editando ? "Editar imóvel" : "Cadastrar imóvel"}</h3>
                 <button
                   type="button"
                   className="modal-close"
@@ -403,7 +553,7 @@ export default function Predios() {
               <div className="tenant-modal-body">
                 <div className="tenant-form-grid">
                   <label>
-                    Nome do prédio
+                    Nome do imóvel
                     <input
                       value={form.nome}
                       onChange={(e) =>
@@ -444,7 +594,7 @@ export default function Predios() {
                           marginBottom: 10
                         }}
                       >
-                        <strong>Apartamentos do prédio</strong>
+                        <strong>Apartamentos do imóvel</strong>
 
                         <button
                           type="button"
@@ -518,8 +668,8 @@ export default function Predios() {
                   {salvando
                     ? "Salvando..."
                     : editando
-                    ? "Atualizar prédio"
-                    : "Salvar prédio"}
+                    ? "Atualizar imóvel"
+                    : "Salvar imóvel"}
                 </button>
               </div>
             </form>
@@ -568,7 +718,7 @@ export default function Predios() {
 
                   {apartamentosDoPredio.length === 0 ? (
                     <div style={{ color: "#64748b", fontSize: 14 }}>
-                      Nenhum apartamento cadastrado neste prédio.
+                      Nenhum apartamento cadastrado neste imóvel.
                     </div>
                   ) : (
                     <div style={{ display: "grid", gap: 10 }}>

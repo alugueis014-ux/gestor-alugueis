@@ -1,0 +1,32 @@
+ALUGUE FÁCIL — VALIDAÇÕES AUTOMÁTICAS GLOBAIS
+
+Esta atualização é GLOBAL: vale para todas as empresas e usuários, mantendo
+cada empresa independente por empresa_id.
+
+VALIDAÇÕES:
+1. Impede dois contratos ativos no mesmo apartamento.
+2. Permite o mesmo inquilino em dois ou mais imóveis/apartamentos, desde que cada apartamento tenha apenas um contrato ativo.
+3. Impede apartamento Disponível/Reservado/Manutenção com contrato ativo.
+4. Impede apartamento Ocupado sem contrato ativo.
+5. Impede duas cobranças do mesmo apartamento na mesma competência,
+   mesmo com contrato_id diferente.
+6. Pagamento acima do devido exige confirmação.
+7. Pagamento parcial continua Pendente/Atrasado; não vira Pago.
+8. Impede apartamento duplicado com o mesmo número dentro do mesmo imóvel.
+9. Confere que contrato, apartamento, inquilino e recebimento pertencem
+   à mesma empresa.
+10. O mesmo inquilino pode ter vários contratos ativos em imóveis diferentes.
+
+ARQUIVOS ALTERADOS:
+- app/apartamentos/page.js
+- app/recebimentos/page.js
+- supabase/migrations/004_validacoes_automaticas_globais.sql
+
+ETAPA OBRIGATÓRIA NO SUPABASE:
+Abra o arquivo:
+supabase/migrations/004_validacoes_automaticas_globais.sql
+
+Copie o conteúdo para o SQL Editor do Supabase e execute UMA VEZ.
+A migration não apaga dados antigos. Ela protege o sistema contra novos erros.
+
+Teste no localhost antes do git push.

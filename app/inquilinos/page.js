@@ -110,6 +110,7 @@ export default function Inquilinos() {
           .from("predios")
           .select("id,nome,endereco")
           .eq("empresa_id", id)
+          .eq("arquivado", false)
           .order("nome"),
         supabase
           .from("apartamentos")
@@ -166,7 +167,7 @@ export default function Inquilinos() {
 
       const predioId = contrato?.apartamentos?.predio_id || "sem-predio";
       const predioNome =
-        contrato?.apartamentos?.predios?.nome || "Sem prédio informado";
+        contrato?.apartamentos?.predios?.nome || "Sem imóvel informado";
 
       if (!grupos.has(predioId)) {
         grupos.set(predioId, {
@@ -221,7 +222,7 @@ export default function Inquilinos() {
     const { inquilino, contrato } = modalTransferencia;
 
     if (!formTransferencia.predio_id || !formTransferencia.apartamento_id) {
-      return setErro("Selecione o prédio e o novo apartamento.");
+      return setErro("Selecione o imóvel e o novo apartamento.");
     }
     if (!formTransferencia.valor_aluguel || Number(formTransferencia.valor_aluguel) <= 0) {
       return setErro("Informe o valor do aluguel.");
@@ -936,7 +937,7 @@ export default function Inquilinos() {
               <div className="tenant-modal-body">
                 <div className="tenant-form-grid">
                   <label>
-                    Novo prédio
+                    Novo imóvel
                     <select
                       value={formTransferencia.predio_id}
                       onChange={e =>
@@ -1038,7 +1039,7 @@ export default function Inquilinos() {
                         color: "#64748b"
                       }}
                     >
-                      Não há apartamentos disponíveis neste prédio.
+                      Não há apartamentos disponíveis neste imóvel.
                     </div>
                   )}
 
@@ -1114,7 +1115,7 @@ export default function Inquilinos() {
                   </label>
 
                   <label>
-                    Prédio
+                    Imóvel
                     <select
                       value={form.predio_id}
                       onChange={e => alterarPredio(e.target.value)}

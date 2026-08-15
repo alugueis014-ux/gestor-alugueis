@@ -102,11 +102,13 @@ export default function Apartamentos() {
           .from("predios")
           .select("id,nome,endereco")
           .eq("empresa_id", id)
+          .eq("arquivado", false)
           .order("nome"),
         supabase
           .from("apartamentos")
-          .select("*, predios(nome,endereco)")
+          .select("*, predios!inner(nome,endereco,arquivado)")
           .eq("empresa_id", id)
+          .eq("predios.arquivado", false)
           .order("numero"),
         supabase
           .from("inquilinos")
@@ -147,8 +149,29 @@ export default function Apartamentos() {
     try {
       const id = empresaId || await obterEmpresaId();
 
+      if (form.situacao === "ocupado") {
+        throw new Error(
+          "Um apartamento só pode ficar como Ocupado quando houver um contrato ativo. Cadastre como Disponível e vincule o inquilino."
+        );
+      }
+
+      const { data: duplicado, error: duplicadoError } = await supabase
+        .from("apartamentos")
+        .select("id")
+        .eq("empresa_id", id)
+        .eq("predio_id", form.predio_id)
+        .eq("numero", form.numero.trim())
+        .limit(1)
+        .maybeSingle();
+
+      if (duplicadoError) throw duplicadoError;
+      if (duplicado) {
+        throw new Error("Já existe um apartamento com este número neste imóvel.");
+      }
+
       const { error } = await supabase.from("apartamentos").insert({
         ...form,
+        numero: form.numero.trim(),
         empresa_id: id,
       });
 
@@ -203,11 +226,42 @@ export default function Apartamentos() {
     try {
       const idEmpresa = empresaId || await obterEmpresaId();
 
+      const contratoAtivo = contratosAtivos.find(
+        c => c.apartamento_id === modalEditar.id && c.status === "ativo"
+      );
+
+      if (contratoAtivo && formEditar.situacao !== "ocupado") {
+        throw new Error(
+          "Este apartamento possui contrato ativo e deve permanecer como Ocupado. Encerre o contrato antes de alterar a situação."
+        );
+      }
+
+      if (!contratoAtivo && formEditar.situacao === "ocupado") {
+        throw new Error(
+          "Não é permitido marcar um apartamento como Ocupado sem contrato ativo."
+        );
+      }
+
+      const { data: duplicado, error: duplicadoError } = await supabase
+        .from("apartamentos")
+        .select("id")
+        .eq("empresa_id", idEmpresa)
+        .eq("predio_id", formEditar.predio_id)
+        .eq("numero", formEditar.numero.trim())
+        .neq("id", modalEditar.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (duplicadoError) throw duplicadoError;
+      if (duplicado) {
+        throw new Error("Já existe um apartamento com este número neste imóvel.");
+      }
+
       const { error } = await supabase
         .from("apartamentos")
         .update({
           predio_id: formEditar.predio_id,
-          numero: formEditar.numero,
+          numero: formEditar.numero.trim(),
           situacao: formEditar.situacao,
           observacoes: formEditar.observacoes,
         })
@@ -279,19 +333,21 @@ export default function Apartamentos() {
       const idEmpresa = empresaId || await obterEmpresaId();
       setEmpresaId(idEmpresa);
 
-      // Confere novamente no banco para impedir vínculo duplicado,
-      // sempre dentro da empresa atual.
-      const { data: contratoExistente, error: contratoError } = await supabase
+      // Confere novamente no banco se o APARTAMENTO já possui contrato ativo.
+      // O mesmo inquilino pode ter contratos ativos em imóveis/apartamentos diferentes.
+      const { data: contratoDoApartamento, error: contratoApartamentoError } = await supabase
         .from("contratos")
         .select("id")
         .eq("empresa_id", idEmpresa)
-        .eq("inquilino_id", formContrato.inquilino_id)
+        .eq("apartamento_id", modalInquilino.id)
         .eq("status", "ativo")
+        .limit(1)
         .maybeSingle();
 
-      if (contratoError) throw contratoError;
-      if (contratoExistente) {
-        throw new Error("Este inquilino já está vinculado a outro apartamento.");
+      if (contratoApartamentoError) throw contratoApartamentoError;
+
+      if (contratoDoApartamento) {
+        throw new Error("Este apartamento já possui um contrato ativo.");
       }
 
       const { error: novoContratoError } = await supabase
@@ -346,7 +402,7 @@ export default function Apartamentos() {
         grupos.set(apartamento.predio_id, {
           predio: {
             id: apartamento.predio_id,
-            nome: apartamento.predios?.nome || "Prédio não informado",
+            nome: apartamento.predios?.nome || "Imóvel não informado",
             endereco: apartamento.predios?.endereco || "",
           },
           apartamentos: [],
@@ -368,7 +424,7 @@ export default function Apartamentos() {
 
         <form className="panel form-grid" onSubmit={salvar}>
           <label>
-            Prédio
+            Imóvel
             <select
               value={form.predio_id}
               onChange={(e) => setForm({ ...form, predio_id: e.target.value })}
@@ -400,7 +456,6 @@ export default function Apartamentos() {
               <option value="disponivel">Disponível</option>
               <option value="reservado">Reservado</option>
               <option value="manutencao">Manutenção</option>
-              <option value="ocupado">Ocupado</option>
             </select>
           </label>
 
@@ -485,7 +540,7 @@ export default function Apartamentos() {
                   ) : (
                     <tr>
                       <td colSpan="4" style={{ color: "#64748b" }}>
-                        Nenhum apartamento cadastrado neste prédio.
+                        Nenhum apartamento cadastrado neste imóvel.
                       </td>
                     </tr>
                   )}
@@ -519,7 +574,7 @@ export default function Apartamentos() {
               <div className="tenant-modal-body">
                 <div className="tenant-form-grid">
                   <label>
-                    Prédio
+                    Imóvel
                     <select
                       value={formEditar.predio_id}
                       onChange={e =>
@@ -557,8 +612,7 @@ export default function Apartamentos() {
                       <option value="disponivel">Disponível</option>
                       <option value="reservado">Reservado</option>
                       <option value="manutencao">Manutenção</option>
-                      <option value="ocupado">Ocupado</option>
-                    </select>
+                            </select>
                   </label>
 
                   <label>

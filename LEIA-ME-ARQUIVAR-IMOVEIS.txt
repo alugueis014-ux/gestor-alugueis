@@ -1,0 +1,20 @@
+ALUGUE FÁCIL — ARQUIVAMENTO DE IMÓVEIS COM HISTÓRICO
+
+REGRA GLOBAL:
+- Imóvel com contrato ATIVO: não pode excluir nem arquivar.
+- Imóvel com contratos antigos/histórico: ao clicar Excluir, oferece ARQUIVAR.
+- Imóvel sem histórico de contratos: pode ser excluído definitivamente.
+- Imóvel arquivado mantém contratos, pagamentos e histórico.
+- Tela Imóveis ganhou os botões "Imóveis ativos" e "Arquivados".
+- Imóvel arquivado pode ser restaurado.
+- Imóveis arquivados não aparecem para novos cadastros/vínculos nem em Disponíveis.
+- Relatórios, contratos e recebimentos históricos continuam preservados.
+
+EMPRESAS:
+A regra é global, mas cada operação usa empresa_id. Uma empresa não interfere na outra.
+
+ETAPA OBRIGATÓRIA NO SUPABASE:
+Execute UMA VEZ no SQL Editor:
+supabase/migrations/005_arquivamento_imoveis_global.sql
+
+Depois substitua os arquivos do projeto e teste no localhost.

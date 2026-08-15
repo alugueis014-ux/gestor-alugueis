@@ -1,0 +1,1242 @@
+"use client";
+
+import "../ui-standard.css";
+
+import { useEffect, useMemo, useState } from "react";
+import AppShell from "../../components/AppShell";
+import AuthGuard from "../../components/AuthGuard";
+import { supabase } from "../../lib/supabase";
+
+const formularioVazio = {
+  nome: "",
+  cpf: "",
+  telefone: "",
+  email: "",
+  predio_id: "",
+  apartamento_id: "",
+  valor_aluguel: "",
+  dia_vencimento: "",
+  data_inicio: "",
+  data_fim: "",
+  status: "ativo",
+  data_saida: "",
+  observacoes: ""
+};
+
+export default function Inquilinos() {
+  const [lista, setLista] = useState([]);
+  const [predios, setPredios] = useState([]);
+  const [apartamentos, setApartamentos] = useState([]);
+  const [form, setForm] = useState(formularioVazio);
+  const [arquivo, setArquivo] = useState(null);
+  const [modalAberto, setModalAberto] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [erro, setErro] = useState("");
+  const [empresaId, setEmpresaId] = useState(null);
+  const [editandoId, setEditandoId] = useState(null);
+  const [contratoEditandoId, setContratoEditandoId] = useState(null);
+  const [apartamentoAnteriorId, setApartamentoAnteriorId] = useState(null);
+  const [modalTransferencia, setModalTransferencia] = useState(null);
+  const [transferindo, setTransferindo] = useState(false);
+  const [formTransferencia, setFormTransferencia] = useState({
+    predio_id: "",
+    apartamento_id: "",
+    valor_aluguel: "",
+    dia_vencimento: "",
+    data_transferencia: new Date().toISOString().slice(0, 10)
+  });
+
+  useEffect(() => { iniciar(); }, []);
+
+  async function obterEmpresaId() {
+    const { data: auth, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !auth?.user) {
+      throw new Error("Sessão inválida. Entre novamente no sistema.");
+    }
+
+    let consulta = await supabase
+      .from("empresa_usuarios")
+      .select("empresa_id")
+      .eq("usuario_id", auth.user.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (
+      consulta.error &&
+      /usuario_id|column|schema cache/i.test(consulta.error.message || "")
+    ) {
+      consulta = await supabase
+        .from("empresa_usuarios")
+        .select("empresa_id")
+        .eq("user_id", auth.user.id)
+        .limit(1)
+        .maybeSingle();
+    }
+
+    if (consulta.error) throw consulta.error;
+    if (!consulta.data?.empresa_id) {
+      throw new Error("Usuário não está vinculado a nenhuma empresa.");
+    }
+
+    return consulta.data.empresa_id;
+  }
+
+  async function iniciar() {
+    setErro("");
+    try {
+      const id = await obterEmpresaId();
+      setEmpresaId(id);
+      await carregarTudo(id);
+    } catch (err) {
+      setErro(err.message || "Não foi possível identificar a empresa.");
+    }
+  }
+
+  async function carregarTudo(idEmpresa = empresaId) {
+    setErro("");
+
+    try {
+      const id = idEmpresa || await obterEmpresaId();
+
+      const [inq, pre, apt] = await Promise.all([
+        supabase
+          .from("inquilinos")
+          .select("*, contratos(id, apartamento_id, valor_aluguel, dia_vencimento, data_inicio, data_fim, status, apartamentos(numero, predio_id, predios(nome,endereco)))")
+          .eq("empresa_id", id)
+          .order("nome"),
+        supabase
+          .from("predios")
+          .select("id,nome,endereco")
+          .eq("empresa_id", id)
+          .order("nome"),
+        supabase
+          .from("apartamentos")
+          .select("id,predio_id,numero,situacao,predios(nome,endereco)")
+          .eq("empresa_id", id)
+          .order("numero")
+      ]);
+
+      const falha = inq.error || pre.error || apt.error;
+      if (falha) throw falha;
+
+      setLista(inq.data || []);
+      setPredios(pre.data || []);
+      setApartamentos(apt.data || []);
+    } catch (err) {
+      setErro(err.message || "Não foi possível carregar os dados.");
+    }
+  }
+
+  const apartamentosDoPredio = useMemo(() => {
+    if (!form.predio_id) return [];
+    return apartamentos.filter(
+      a => a.predio_id === form.predio_id &&
+      (a.situacao !== "ocupado" || a.id === form.apartamento_id)
+    );
+  }, [apartamentos, form.predio_id, form.apartamento_id]);
+
+  const prediosComApartamentosDisponiveis = useMemo(() => {
+    return predios.filter((predio) =>
+      apartamentos.some(
+        (a) =>
+          a.predio_id === predio.id &&
+          (a.situacao !== "ocupado" || a.id === form.apartamento_id)
+      )
+    );
+  }, [predios, apartamentos, form.apartamento_id]);
+
+  const filtrados = lista.filter(i => {
+    const texto = [i.nome, i.cpf, i.telefone].join(" ").toLowerCase();
+    return texto.includes(busca.toLowerCase());
+  });
+
+  const inquilinosPorPredio = useMemo(() => {
+    const grupos = new Map();
+
+    predios.forEach((predio) => {
+      grupos.set(predio.id, { predio, inquilinos: [] });
+    });
+
+    filtrados.forEach((inquilino) => {
+      const contrato =
+        (inquilino.contratos || []).find(c => c.status === "ativo") ||
+        (inquilino.contratos || [])[0];
+
+      const predioId = contrato?.apartamentos?.predio_id || "sem-predio";
+      const predioNome =
+        contrato?.apartamentos?.predios?.nome || "Sem prédio informado";
+
+      if (!grupos.has(predioId)) {
+        grupos.set(predioId, {
+          predio: {
+            id: predioId,
+            nome: predioNome,
+            endereco: contrato?.apartamentos?.predios?.endereco || ""
+          },
+          inquilinos: []
+        });
+      }
+
+      grupos.get(predioId).inquilinos.push({ inquilino, contrato });
+    });
+
+    return Array.from(grupos.values()).filter(
+      grupo => grupo.inquilinos.length > 0
+    );
+  }, [predios, filtrados]);
+
+  const apartamentosDisponiveisTransferencia = useMemo(() => {
+    if (!formTransferencia.predio_id) return [];
+    return apartamentos.filter(
+      a =>
+        a.predio_id === formTransferencia.predio_id &&
+        a.situacao !== "ocupado"
+    );
+  }, [apartamentos, formTransferencia.predio_id]);
+
+  function abrirTransferencia(inquilino) {
+    const contratoAtivo = (inquilino.contratos || []).find(c => c.status === "ativo");
+
+    if (!contratoAtivo) {
+      return setErro("Este inquilino não possui contrato ativo para transferir.");
+    }
+
+    setErro("");
+    setModalTransferencia({ inquilino, contrato: contratoAtivo });
+    setFormTransferencia({
+      predio_id: "",
+      apartamento_id: "",
+      valor_aluguel: String(contratoAtivo.valor_aluguel ?? ""),
+      dia_vencimento: String(contratoAtivo.dia_vencimento ?? ""),
+      data_transferencia: new Date().toISOString().slice(0, 10)
+    });
+  }
+
+  async function transferirInquilino(e) {
+    e.preventDefault();
+    if (!modalTransferencia) return;
+
+    const { inquilino, contrato } = modalTransferencia;
+
+    if (!formTransferencia.predio_id || !formTransferencia.apartamento_id) {
+      return setErro("Selecione o prédio e o novo apartamento.");
+    }
+    if (!formTransferencia.valor_aluguel || Number(formTransferencia.valor_aluguel) <= 0) {
+      return setErro("Informe o valor do aluguel.");
+    }
+    if (
+      !formTransferencia.dia_vencimento ||
+      Number(formTransferencia.dia_vencimento) < 1 ||
+      Number(formTransferencia.dia_vencimento) > 31
+    ) {
+      return setErro("Informe um dia de vencimento entre 1 e 31.");
+    }
+    if (!formTransferencia.data_transferencia) {
+      return setErro("Informe a data da transferência.");
+    }
+
+    setTransferindo(true);
+    setErro("");
+
+    try {
+      const idEmpresa = empresaId || await obterEmpresaId();
+      setEmpresaId(idEmpresa);
+
+      // Confere novamente se o destino continua disponível.
+      const { data: destino, error: destinoError } = await supabase
+        .from("apartamentos")
+        .select("id,situacao")
+        .eq("id", formTransferencia.apartamento_id)
+        .eq("empresa_id", idEmpresa)
+        .single();
+
+      if (destinoError) throw destinoError;
+      if (destino.situacao === "ocupado") {
+        throw new Error("O apartamento escolhido acabou de ser ocupado. Selecione outro.");
+      }
+
+      // Encerra o contrato antigo preservando todo o histórico.
+      const { error: encerrarError } = await supabase
+        .from("contratos")
+        .update({
+          status: "encerrado",
+          data_fim: formTransferencia.data_transferencia
+        })
+        .eq("id", contrato.id)
+        .eq("empresa_id", idEmpresa);
+
+      if (encerrarError) throw encerrarError;
+
+      // Libera o apartamento anterior.
+      const { error: liberarError } = await supabase
+        .from("apartamentos")
+        .update({ situacao: "disponivel" })
+        .eq("id", contrato.apartamento_id)
+        .eq("empresa_id", idEmpresa);
+
+      if (liberarError) throw liberarError;
+
+      // Cria um novo contrato no apartamento de destino.
+      const { error: novoContratoError } = await supabase
+        .from("contratos")
+        .insert({
+          empresa_id: idEmpresa,
+          inquilino_id: inquilino.id,
+          predio_id: formTransferencia.predio_id,
+          apartamento_id: formTransferencia.apartamento_id,
+          valor_aluguel: Number(formTransferencia.valor_aluguel),
+          dia_vencimento: Number(formTransferencia.dia_vencimento),
+          data_inicio: formTransferencia.data_transferencia,
+          data_fim: null,
+          status: "ativo"
+        });
+
+      if (novoContratoError) throw novoContratoError;
+
+      // Ocupa o novo apartamento e mantém o inquilino ativo.
+      const { error: ocuparError } = await supabase
+        .from("apartamentos")
+        .update({ situacao: "ocupado" })
+        .eq("id", formTransferencia.apartamento_id)
+        .eq("empresa_id", idEmpresa);
+
+      if (ocuparError) throw ocuparError;
+
+      const { error: inquilinoError } = await supabase
+        .from("inquilinos")
+        .update({ status: "ativo", data_saida: null })
+        .eq("id", inquilino.id)
+        .eq("empresa_id", idEmpresa);
+
+      if (inquilinoError) throw inquilinoError;
+
+      setModalTransferencia(null);
+      await carregarTudo(idEmpresa);
+    } catch (err) {
+      setErro(err.message || "Não foi possível transferir o inquilino.");
+    } finally {
+      setTransferindo(false);
+    }
+  }
+
+  function abrirNovo() {
+    setForm(formularioVazio);
+    setArquivo(null);
+    setErro("");
+    setEditandoId(null);
+    setContratoEditandoId(null);
+    setApartamentoAnteriorId(null);
+    setModalAberto(true);
+  }
+
+  function abrirEditar(inquilino) {
+    const contrato =
+      (inquilino.contratos || []).find(c => c.status === "ativo") ||
+      (inquilino.contratos || [])[0];
+
+    setForm({
+      nome: inquilino.nome || "",
+      cpf: inquilino.cpf || "",
+      telefone: inquilino.telefone || "",
+      email: inquilino.email || "",
+      predio_id: contrato?.apartamentos?.predio_id || "",
+      apartamento_id: contrato?.apartamento_id || "",
+      valor_aluguel: contrato?.valor_aluguel ?? "",
+      dia_vencimento: contrato?.dia_vencimento ?? "",
+      data_inicio: contrato?.data_inicio || "",
+      data_fim: contrato?.data_fim || "",
+      status: inquilino.status || "ativo",
+      data_saida: inquilino.data_saida || "",
+      observacoes: inquilino.observacoes || ""
+    });
+
+    setArquivo(null);
+    setErro("");
+    setEditandoId(inquilino.id);
+    setContratoEditandoId(contrato?.id || null);
+    setApartamentoAnteriorId(contrato?.apartamento_id || null);
+    setModalAberto(true);
+  }
+
+  function fecharModal() {
+    if (!salvando) setModalAberto(false);
+  }
+
+  function alterarPredio(predioId) {
+    setForm(f => ({ ...f, predio_id: predioId, apartamento_id: "" }));
+  }
+
+  async function enviarAnexo({ empresa_id, inquilino_id, contrato_id }) {
+    if (!arquivo || !contrato_id) return;
+
+    const extensao = arquivo.name.split(".").pop() || "arquivo";
+    const caminho = `${empresa_id}/${contrato_id}/${Date.now()}.${extensao}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("contratos")
+      .upload(caminho, arquivo);
+
+    if (uploadError) throw uploadError;
+
+    const { error: anexoError } = await supabase.from("anexos").insert({
+      empresa_id,
+      inquilino_id,
+      contrato_id,
+      nome_arquivo: arquivo.name,
+      caminho_arquivo: caminho,
+      tipo_arquivo: arquivo.type || null,
+      tamanho_bytes: arquivo.size
+    });
+
+    if (anexoError) throw anexoError;
+  }
+
+  async function salvar(e) {
+    e.preventDefault();
+    if (!form.nome.trim()) return setErro("Informe o nome do inquilino.");
+
+    setSalvando(true);
+    setErro("");
+
+    try {
+      const idEmpresa = empresaId || await obterEmpresaId();
+      setEmpresaId(idEmpresa);
+
+      const dadosInquilino = {
+        nome: form.nome.trim(),
+        cpf: form.cpf.trim() || null,
+        telefone: form.telefone.trim() || null,
+        email: form.email.trim() || null,
+        status: form.status,
+        data_saida: form.data_saida || null,
+        observacoes: form.observacoes.trim() || null
+      };
+
+      let inquilinoId = editandoId;
+
+      if (editandoId) {
+        const { error } = await supabase
+          .from("inquilinos")
+          .update(dadosInquilino)
+          .eq("id", editandoId)
+          .eq("empresa_id", idEmpresa);
+
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from("inquilinos")
+          .insert({ empresa_id: idEmpresa, ...dadosInquilino })
+          .select()
+          .single();
+
+        if (error) throw error;
+        inquilinoId = data.id;
+      }
+
+      const dadosContratoCompletos =
+        form.apartamento_id &&
+        form.valor_aluguel &&
+        form.dia_vencimento &&
+        form.data_inicio;
+
+      let contratoId = contratoEditandoId;
+
+      if (dadosContratoCompletos) {
+        const dadosContrato = {
+          empresa_id: idEmpresa,
+          inquilino_id: inquilinoId,
+          predio_id: form.predio_id,
+          apartamento_id: form.apartamento_id,
+          valor_aluguel: Number(form.valor_aluguel),
+          dia_vencimento: Number(form.dia_vencimento),
+          data_inicio: form.data_inicio,
+          data_fim: form.data_fim || null,
+          status: form.status === "ativo" ? "ativo" : "encerrado"
+        };
+
+        if (contratoEditandoId) {
+          const { error } = await supabase
+            .from("contratos")
+            .update(dadosContrato)
+            .eq("id", contratoEditandoId)
+            .eq("empresa_id", idEmpresa);
+
+          if (error) throw error;
+
+          // Ao alterar o valor do contrato, atualiza somente cobranças
+          // ainda não pagas do mês atual em diante.
+          const hoje = new Date();
+          const competenciaAtual = `${hoje.getFullYear()}-${String(
+            hoje.getMonth() + 1
+          ).padStart(2, "0")}-01`;
+
+          const { error: recebimentosError } = await supabase
+            .from("recebimentos")
+            .update({ valor_previsto: Number(form.valor_aluguel) })
+            .eq("contrato_id", contratoEditandoId)
+            .gte("competencia", competenciaAtual)
+            .neq("status", "pago")
+            .neq("status", "cancelado");
+
+          if (recebimentosError) throw recebimentosError;
+        } else {
+          const { data, error } = await supabase
+            .from("contratos")
+            .insert(dadosContrato)
+            .select()
+            .single();
+
+          if (error) throw error;
+          contratoId = data.id;
+        }
+
+        if (
+          apartamentoAnteriorId &&
+          apartamentoAnteriorId !== form.apartamento_id
+        ) {
+          await supabase
+            .from("apartamentos")
+            .update({ situacao: "disponivel" })
+            .eq("id", apartamentoAnteriorId)
+            .eq("empresa_id", idEmpresa);
+        }
+
+        await supabase
+          .from("apartamentos")
+          .update({
+            situacao: form.status === "ativo" ? "ocupado" : "disponivel"
+          })
+          .eq("id", form.apartamento_id)
+          .eq("empresa_id", idEmpresa);
+      } else if (contratoEditandoId && form.status === "inativo") {
+        await supabase
+          .from("contratos")
+          .update({
+            status: "encerrado",
+            data_fim: form.data_saida || form.data_fim || new Date().toISOString().slice(0, 10)
+          })
+          .eq("id", contratoEditandoId)
+          .eq("empresa_id", idEmpresa);
+
+        if (apartamentoAnteriorId) {
+          await supabase
+            .from("apartamentos")
+            .update({ situacao: "disponivel" })
+            .eq("id", apartamentoAnteriorId)
+            .eq("empresa_id", idEmpresa);
+        }
+      }
+
+      await enviarAnexo({
+        empresa_id: idEmpresa,
+        inquilino_id: inquilinoId,
+        contrato_id: contratoId
+      });
+
+      setModalAberto(false);
+      setForm(formularioVazio);
+      setArquivo(null);
+      setEditandoId(null);
+      setContratoEditandoId(null);
+      setApartamentoAnteriorId(null);
+      await carregarTudo(idEmpresa);
+    } catch (err) {
+      setErro(err.message || "Não foi possível salvar o inquilino.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function excluirInquilino(inquilino) {
+    const contratosDoInquilino = inquilino.contratos || [];
+
+    if (
+      !confirm(
+        `Excluir DEFINITIVAMENTE o inquilino ${inquilino.nome}?\n\n` +
+        "Também serão apagados os contratos, recebimentos e registros de anexos vinculados a este inquilino. " +
+        "Os apartamentos vinculados serão liberados.\n\n" +
+        "Esta ação não pode ser desfeita."
+      )
+    ) {
+      return;
+    }
+
+    const confirmacao = prompt(
+      'Para confirmar a exclusão definitiva, digite EXCLUIR:'
+    );
+
+    if (confirmacao !== "EXCLUIR") {
+      alert("Exclusão cancelada.");
+      return;
+    }
+
+    setErro("");
+
+    try {
+      const idEmpresa = empresaId || await obterEmpresaId();
+      setEmpresaId(idEmpresa);
+
+      const contratoIds = contratosDoInquilino.map(c => c.id).filter(Boolean);
+      const apartamentoIds = contratosDoInquilino
+        .map(c => c.apartamento_id)
+        .filter(Boolean);
+
+      // 1. Apaga recebimentos vinculados aos contratos do inquilino.
+      for (const contratoId of contratoIds) {
+        const { error } = await supabase
+          .from("recebimentos")
+          .delete()
+          .eq("contrato_id", contratoId);
+
+        if (error) throw error;
+      }
+
+      // 2. Apaga registros de anexos vinculados ao inquilino.
+      const { error: anexosError } = await supabase
+        .from("anexos")
+        .delete()
+        .eq("inquilino_id", inquilino.id)
+        .eq("empresa_id", idEmpresa);
+
+      if (anexosError) throw anexosError;
+
+      // 3. Tenta apagar registros do histórico vinculados ao inquilino.
+      // Se a tabela não possuir a coluna inquilino_id, não interrompe a exclusão.
+      try {
+        await supabase
+          .from("historico")
+          .delete()
+          .eq("inquilino_id", inquilino.id);
+      } catch (_) {}
+
+      // 4. Apaga os contratos.
+      const { error: contratosError } = await supabase
+        .from("contratos")
+        .delete()
+        .eq("inquilino_id", inquilino.id)
+        .eq("empresa_id", idEmpresa);
+
+      if (contratosError) throw contratosError;
+
+      // 5. Libera os apartamentos que estavam vinculados ao inquilino.
+      for (const apartamentoId of apartamentoIds) {
+        const { error } = await supabase
+          .from("apartamentos")
+          .update({ situacao: "disponivel" })
+          .eq("id", apartamentoId)
+          .eq("empresa_id", idEmpresa);
+
+        if (error) throw error;
+      }
+
+      // 6. Finalmente apaga o cadastro do inquilino.
+      const { error: inquilinoError } = await supabase
+        .from("inquilinos")
+        .delete()
+        .eq("id", inquilino.id)
+        .eq("empresa_id", idEmpresa);
+
+      if (inquilinoError) throw inquilinoError;
+
+      await carregarTudo(idEmpresa);
+    } catch (err) {
+      setErro(
+        err.message ||
+          "Não foi possível excluir completamente o inquilino."
+      );
+    }
+  }
+
+  async function alternar(inquilino) {
+    const novoStatus = inquilino.status === "ativo" ? "inativo" : "ativo";
+    const contratoAtivo = (inquilino.contratos || []).find(c => c.status === "ativo");
+
+    setErro("");
+
+    try {
+      const idEmpresa = empresaId || await obterEmpresaId();
+      setEmpresaId(idEmpresa);
+
+      const { error } = await supabase
+        .from("inquilinos")
+        .update({
+          status: novoStatus,
+          data_saida: novoStatus === "inativo"
+            ? new Date().toISOString().slice(0, 10)
+            : null
+        })
+        .eq("id", inquilino.id)
+        .eq("empresa_id", idEmpresa);
+
+      if (error) throw error;
+
+      if (contratoAtivo && novoStatus === "inativo") {
+        const { error: contratoError } = await supabase
+          .from("contratos")
+          .update({
+            status: "encerrado",
+            data_fim: new Date().toISOString().slice(0, 10)
+          })
+          .eq("id", contratoAtivo.id)
+          .eq("empresa_id", idEmpresa);
+
+        if (contratoError) throw contratoError;
+
+        const { error: apartamentoError } = await supabase
+          .from("apartamentos")
+          .update({ situacao: "disponivel" })
+          .eq("id", contratoAtivo.apartamento_id)
+          .eq("empresa_id", idEmpresa);
+
+        if (apartamentoError) throw apartamentoError;
+      }
+
+      await carregarTudo(idEmpresa);
+    } catch (err) {
+      setErro(err.message || "Não foi possível alterar o status do inquilino.");
+    }
+  }
+
+  return (
+    <AuthGuard>
+      <AppShell>
+        <div className="tenant-page-header">
+          <h2>Inquilinos</h2>
+          <button className="primary tenant-new-button" onClick={abrirNovo}>
+            Novo inquilino
+          </button>
+        </div>
+
+        <div className="tenant-search-row">
+          <input
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar por nome, CPF ou telefone"
+          />
+        </div>
+
+        {erro && !modalAberto && <div className="error">{erro}</div>}
+
+        <div style={{ display: "grid", gap: 18 }}>
+          {inquilinosPorPredio.length === 0 && (
+            <div className="panel table-wrap tenant-table-panel">
+              <div className="empty-row" style={{ padding: 18 }}>
+                Nenhum inquilino cadastrado.
+              </div>
+            </div>
+          )}
+
+          {inquilinosPorPredio.map(({ predio, inquilinos }) => (
+            <div className="panel table-wrap tenant-table-panel" key={predio.id}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 14,
+                  flexWrap: "wrap"
+                }}
+              >
+                <h3 style={{ margin: 0, fontSize: 21 }}>
+                  {predio.nome}{predio.endereco ? ` - ${predio.endereco}` : ""}
+                </h3>
+                <span
+                  style={{
+                    background: "#e8f1fb",
+                    color: "#174f7a",
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    fontSize: 13,
+                    fontWeight: 700
+                  }}
+                >
+                  {inquilinos.length} inquilino(s)
+                </span>
+              </div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>Apartamento</th>
+                    <th>Inquilino</th>
+                    <th>Telefone</th>
+                    <th>Aluguel</th>
+                    <th>Status</th>
+                    <th>Contrato</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inquilinos.map(({ inquilino: i, contrato }) => (
+                    <tr key={i.id}>
+                      <td>{contrato?.apartamentos?.numero || "Não informado"}</td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{i.nome}</div>
+                        {i.cpf && (
+                          <div style={{ color: "#64748b", fontSize: 13 }}>
+                            CPF: {i.cpf}
+                          </div>
+                        )}
+                      </td>
+                      <td>{i.telefone || "-"}</td>
+                      <td>
+                        {contrato?.valor_aluguel != null
+                          ? Number(contrato.valor_aluguel).toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL"
+                            })
+                          : "-"}
+                      </td>
+                      <td>
+                        <span className={`badge ${i.status}`}>
+                          {i.status === "ativo" ? "Ativo" : "Inativo"}
+                        </span>
+                      </td>
+                      <td>{contrato ? "Cadastrado" : "Sem contrato"}</td>
+                      <td>
+                        <div className="tenant-action-buttons">
+                          <button
+                            className="secondary"
+                            onClick={() => abrirEditar(i)}
+                          >
+                            Editar
+                          </button>
+                          {i.status === "ativo" && contrato?.status === "ativo" && (
+                            <button
+                              className="secondary"
+                              onClick={() => abrirTransferencia(i)}
+                            >
+                              Transferir
+                            </button>
+                          )}
+                          <button
+                            className="secondary"
+                            onClick={() => alternar(i)}
+                          >
+                            {i.status === "ativo" ? "Desativar" : "Reativar"}
+                          </button>
+                          <button
+                            className="danger"
+                            onClick={() => excluirInquilino(i)}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+
+
+        <style jsx>{`
+          .tenant-table-panel {
+            overflow-x: auto;
+          }
+
+          .tenant-table-panel table {
+            width: 100%;
+            min-width: 1320px;
+            table-layout: fixed;
+          }
+
+          .tenant-table-panel th,
+          .tenant-table-panel td {
+            box-sizing: border-box;
+            vertical-align: middle;
+          }
+
+          .tenant-table-panel th:nth-child(1),
+          .tenant-table-panel td:nth-child(1) {
+            width: 14%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+
+          .tenant-table-panel th:nth-child(2),
+          .tenant-table-panel td:nth-child(2) {
+            width: 19%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            line-height: 1.35;
+          }
+
+          .tenant-table-panel th:nth-child(3),
+          .tenant-table-panel td:nth-child(3) {
+            width: 15%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel th:nth-child(4),
+          .tenant-table-panel td:nth-child(4) {
+            width: 12%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel th:nth-child(5),
+          .tenant-table-panel td:nth-child(5) {
+            width: 9%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel th:nth-child(6),
+          .tenant-table-panel td:nth-child(6) {
+            width: 11%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel th:nth-child(7),
+          .tenant-table-panel td:nth-child(7) {
+            width: 20%;
+            white-space: nowrap;
+          }
+
+          .tenant-table-panel .tenant-action-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: nowrap;
+            align-items: center;
+          }
+        `}</style>
+
+        {modalTransferencia && (
+          <div
+            className="tenant-modal-backdrop"
+            onMouseDown={e => {
+              if (e.target === e.currentTarget && !transferindo) {
+                setModalTransferencia(null);
+              }
+            }}
+          >
+            <form className="tenant-modal" onSubmit={transferirInquilino}>
+              <div className="tenant-modal-title">
+                <div>
+                  <h3>Transferir inquilino</h3>
+                  <div style={{ marginTop: 4, color: "#64748b", fontSize: 14 }}>
+                    {modalTransferencia.inquilino.nome} — apartamento atual:{" "}
+                    {modalTransferencia.contrato.apartamentos?.numero || "-"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="modal-close"
+                  onClick={() => setModalTransferencia(null)}
+                  disabled={transferindo}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="tenant-modal-body">
+                <div className="tenant-form-grid">
+                  <label>
+                    Novo prédio
+                    <select
+                      value={formTransferencia.predio_id}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          predio_id: e.target.value,
+                          apartamento_id: ""
+                        }))
+                      }
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      {predios.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}{p.endereco ? ` — ${p.endereco}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Novo apartamento
+                    <select
+                      value={formTransferencia.apartamento_id}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          apartamento_id: e.target.value
+                        }))
+                      }
+                      disabled={!formTransferencia.predio_id}
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      {apartamentosDisponiveisTransferencia.map(a => (
+                        <option key={a.id} value={a.id}>{a.numero}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Valor do aluguel
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={formTransferencia.valor_aluguel}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          valor_aluguel: e.target.value
+                        }))
+                      }
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Dia do vencimento
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={formTransferencia.dia_vencimento}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          dia_vencimento: e.target.value
+                        }))
+                      }
+                      required
+                    />
+                  </label>
+
+                  <label className="tenant-full">
+                    Data da transferência
+                    <input
+                      type="date"
+                      value={formTransferencia.data_transferencia}
+                      onChange={e =>
+                        setFormTransferencia(f => ({
+                          ...f,
+                          data_transferencia: e.target.value
+                        }))
+                      }
+                      required
+                    />
+                  </label>
+                </div>
+
+                {formTransferencia.predio_id &&
+                  apartamentosDisponiveisTransferencia.length === 0 && (
+                    <div
+                      style={{
+                        marginTop: 14,
+                        padding: 12,
+                        background: "#f8fafc",
+                        borderRadius: 8,
+                        color: "#64748b"
+                      }}
+                    >
+                      Não há apartamentos disponíveis neste prédio.
+                    </div>
+                  )}
+
+                {erro && <div className="error tenant-modal-error">{erro}</div>}
+              </div>
+
+              <div className="tenant-modal-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setModalTransferencia(null)}
+                  disabled={transferindo}
+                >
+                  Cancelar
+                </button>
+                <button className="primary" disabled={transferindo}>
+                  {transferindo ? "Transferindo..." : "Confirmar transferência"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {modalAberto && (
+          <div
+            className="tenant-modal-backdrop"
+            onMouseDown={e => {
+              if (e.target === e.currentTarget) fecharModal();
+            }}
+          >
+            <form className="tenant-modal" onSubmit={salvar}>
+              <div className="tenant-modal-title">
+                <h3>{editandoId ? "Editar inquilino" : "Inquilino"}</h3>
+                <button type="button" className="modal-close" onClick={fecharModal}>
+                  ×
+                </button>
+              </div>
+
+              <div className="tenant-modal-body">
+                <div className="tenant-form-grid">
+                  <label>
+                    Nome
+                    <input
+                      value={form.nome}
+                      onChange={e => setForm({...form, nome:e.target.value})}
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    CPF
+                    <input
+                      value={form.cpf}
+                      onChange={e => setForm({...form, cpf:e.target.value})}
+                    />
+                  </label>
+
+                  <label>
+                    Telefone
+                    <input
+                      value={form.telefone}
+                      onChange={e => setForm({...form, telefone:e.target.value})}
+                    />
+                  </label>
+
+                  <label>
+                    E-mail
+                    <input
+                      type="email"
+                      value={form.email}
+                      onChange={e => setForm({...form, email:e.target.value})}
+                    />
+                  </label>
+
+                  <label>
+                    Prédio
+                    <select
+                      value={form.predio_id}
+                      onChange={e => alterarPredio(e.target.value)}
+                    >
+                      <option value="">Não informado</option>
+                      {prediosComApartamentosDisponiveis.map(p => (
+                        <option key={p.id} value={p.id}>{p.nome}{p.endereco ? ` — ${p.endereco}` : ""}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Apartamento
+                    <select
+                      value={form.apartamento_id}
+                      onChange={e => setForm({...form, apartamento_id:e.target.value})}
+                      disabled={!form.predio_id}
+                    >
+                      <option value="">Não informado</option>
+                      {apartamentosDoPredio.map(a => (
+                        <option key={a.id} value={a.id}>{a.numero}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Valor do aluguel
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={form.valor_aluguel}
+                      onChange={e => setForm({...form, valor_aluguel:e.target.value})}
+                    />
+                  </label>
+
+                  <label>
+                    Dia do vencimento
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={form.dia_vencimento}
+                      onChange={e => setForm({...form, dia_vencimento:e.target.value})}
+                    />
+                  </label>
+
+                  <label>
+                    Início do contrato
+                    <input
+                      type="date"
+                      value={form.data_inicio}
+                      onChange={e => setForm({...form, data_inicio:e.target.value})}
+                    />
+                  </label>
+
+                  <label>
+                    Fim do contrato
+                    <input
+                      type="date"
+                      value={form.data_fim}
+                      onChange={e => setForm({...form, data_fim:e.target.value})}
+                    />
+                  </label>
+
+                  <label>
+                    Status
+                    <select
+                      value={form.status}
+                      onChange={e => setForm({...form, status:e.target.value})}
+                    >
+                      <option value="ativo">Ativo</option>
+                      <option value="inativo">Inativo</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Data de saída
+                    <input
+                      type="date"
+                      value={form.data_saida}
+                      onChange={e => setForm({...form, data_saida:e.target.value})}
+                    />
+                  </label>
+
+                  <label>
+                    Contrato/anexo
+                    <input
+                      type="file"
+                      accept=".pdf,image/*"
+                      onChange={e => setArquivo(e.target.files?.[0] || null)}
+                    />
+                  </label>
+
+                  <label className="tenant-full">
+                    Observações
+                    <textarea
+                      value={form.observacoes}
+                      onChange={e => setForm({...form, observacoes:e.target.value})}
+                    />
+                  </label>
+                </div>
+
+                {erro && <div className="error tenant-modal-error">{erro}</div>}
+              </div>
+
+              <div className="tenant-modal-actions">
+                <button type="button" className="secondary" onClick={fecharModal}>
+                  Cancelar
+                </button>
+                <button className="primary" disabled={salvando}>
+                  {salvando
+                    ? "Salvando..."
+                    : editandoId
+                      ? "Salvar alterações"
+                      : "Salvar inquilino"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </AppShell>
+    </AuthGuard>
+  );
+}

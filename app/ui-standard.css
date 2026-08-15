@@ -1,0 +1,1476 @@
+
+/* =========================================================
+   GESTOR DE ALUGUÉIS — PADRÃO VISUAL GLOBAL
+   ========================================================= */
+
+:root {
+  --ga-bg: #f5f8fc;
+  --ga-surface: #ffffff;
+  --ga-surface-soft: #f8fafc;
+  --ga-primary: #1976d2;
+  --ga-primary-hover: #125fae;
+  --ga-primary-soft: #e8f3ff;
+  --ga-text: #0f2d52;
+  --ga-text-soft: #5f7087;
+  --ga-border: #d8e4f0;
+  --ga-border-strong: #b8cee3;
+  --ga-danger: #bd1e24;
+  --ga-danger-hover: #98181d;
+  --ga-danger-soft: #fde8e8;
+  --ga-success: #18794e;
+  --ga-success-soft: #e9f7ef;
+  --ga-warning: #8a5a00;
+  --ga-warning-soft: #fff5d9;
+  --ga-radius: 12px;
+  --ga-radius-sm: 8px;
+  --ga-shadow: 0 1px 2px rgba(15, 35, 63, .04);
+  --ga-font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Base */
+html,
+body {
+  background: var(--ga-bg) !important;
+  color: var(--ga-text) !important;
+  font-family: var(--ga-font) !important;
+  font-size: 15px !important;
+  line-height: 1.45 !important;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit !important;
+}
+
+.content {
+  background: var(--ga-bg) !important;
+  color: var(--ga-text) !important;
+  padding: 26px 28px !important;
+}
+
+/* Cabeçalhos de página */
+.page-header,
+.tenant-page-header,
+.contracts-header,
+.tracking-header,
+.reports-header,
+.receipts-header,
+.monthly-header {
+  margin: 0 0 20px !important;
+}
+
+.page-header h2,
+.tenant-page-header h2,
+.contracts-header h2,
+.tracking-header h2,
+.reports-header h2,
+.receipts-header h2,
+.monthly-header h2,
+.content > h2 {
+  margin: 0 !important;
+  color: var(--ga-text) !important;
+  font-size: 27px !important;
+  line-height: 1.2 !important;
+  font-weight: 750 !important;
+  letter-spacing: -.02em !important;
+}
+
+.page-header p,
+.contracts-header p,
+.receipts-header p,
+.content > p {
+  margin: 6px 0 0 !important;
+  color: var(--ga-text-soft) !important;
+  font-size: 14px !important;
+}
+
+/* Painéis / cards */
+.panel,
+.contract-building,
+.reports-section,
+.tracking-table-wrap,
+.receipts-panel,
+.monthly-panel {
+  background: var(--ga-surface) !important;
+  border: 1px solid var(--ga-border) !important;
+  border-radius: var(--ga-radius) !important;
+  box-shadow: var(--ga-shadow) !important;
+}
+
+.panel {
+  padding: 16px !important;
+}
+
+.panel + .panel,
+.reports-section + .reports-section {
+  margin-top: 18px !important;
+}
+
+/* Formulários */
+.form-grid,
+.tenant-form-grid,
+.receipts-form-grid {
+  gap: 14px !important;
+}
+
+label {
+  color: var(--ga-text) !important;
+  font-size: 14px !important;
+  font-weight: 650 !important;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  color: var(--ga-text) !important;
+  background: #fff !important;
+  border: 1px solid var(--ga-border-strong) !important;
+  border-radius: var(--ga-radius-sm) !important;
+  min-height: 42px !important;
+  padding: 9px 11px !important;
+  font-size: 14px !important;
+  outline: none !important;
+  transition: border-color .15s ease, box-shadow .15s ease !important;
+}
+
+textarea {
+  min-height: 96px !important;
+  resize: vertical !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--ga-primary) !important;
+  box-shadow: 0 0 0 3px rgba(23, 79, 122, .12) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8a99ab !important;
+}
+
+/* Botões */
+button,
+.primary,
+.secondary,
+.danger,
+.link-button {
+  min-height: 38px !important;
+  border-radius: var(--ga-radius-sm) !important;
+  padding: 8px 13px !important;
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  line-height: 1.15 !important;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, opacity .15s ease !important;
+}
+
+.primary {
+  background: var(--ga-primary) !important;
+  border: 1px solid var(--ga-primary) !important;
+  color: #fff !important;
+}
+
+.primary:hover {
+  background: var(--ga-primary-hover) !important;
+  border-color: var(--ga-primary-hover) !important;
+}
+
+.secondary {
+  background: #fff !important;
+  border: 1px solid var(--ga-primary) !important;
+  color: var(--ga-primary) !important;
+}
+
+.secondary:hover {
+  background: var(--ga-primary-soft) !important;
+}
+
+.danger {
+  background: var(--ga-danger) !important;
+  border: 1px solid var(--ga-danger) !important;
+  color: #fff !important;
+}
+
+.danger:hover {
+  background: var(--ga-danger-hover) !important;
+  border-color: var(--ga-danger-hover) !important;
+}
+
+button:disabled {
+  opacity: .55 !important;
+  cursor: not-allowed !important;
+}
+
+.link-button {
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--ga-primary) !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  min-height: auto !important;
+  text-decoration: underline !important;
+}
+
+/* Tabelas */
+.table-wrap,
+.contracts-scroll,
+.reports-table-wrap,
+.tracking-table-wrap {
+  overflow-x: auto !important;
+}
+
+table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  font-size: 14px !important;
+  color: var(--ga-text) !important;
+}
+
+thead th {
+  background: #eaf2f9 !important;
+  color: var(--ga-text) !important;
+  font-size: 13px !important;
+  font-weight: 750 !important;
+  text-align: left !important;
+  padding: 11px 12px !important;
+  border-bottom: 1px solid var(--ga-border) !important;
+  white-space: nowrap;
+}
+
+tbody td {
+  padding: 11px 12px !important;
+  border-bottom: 1px solid #e7edf4 !important;
+  vertical-align: middle !important;
+  font-size: 14px !important;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0 !important;
+}
+
+tbody tr:hover td {
+  background: #fbfdff !important;
+}
+
+/* Badges */
+.badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 26px !important;
+  padding: 4px 9px !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  font-weight: 750 !important;
+  line-height: 1 !important;
+}
+
+.badge.ativo,
+.badge.pago,
+.badge.ocupado {
+  color: var(--ga-success) !important;
+  background: var(--ga-success-soft) !important;
+}
+
+.badge.inativo,
+.badge.encerrado,
+.badge.cancelado {
+  color: var(--ga-danger) !important;
+  background: var(--ga-danger-soft) !important;
+}
+
+.badge.disponivel {
+  color: var(--ga-primary) !important;
+  background: var(--ga-primary-soft) !important;
+}
+
+.badge.pendente,
+.badge.atrasado {
+  color: var(--ga-warning) !important;
+  background: var(--ga-warning-soft) !important;
+}
+
+/* Mensagens */
+.error {
+  color: #a8181d !important;
+  background: #fde8e8 !important;
+  border: 1px solid #f5caca !important;
+  border-radius: var(--ga-radius-sm) !important;
+  padding: 10px 12px !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+.success,
+.message,
+.mensagem {
+  color: var(--ga-success) !important;
+  background: var(--ga-success-soft) !important;
+  border: 1px solid #ccead9 !important;
+  border-radius: var(--ga-radius-sm) !important;
+  padding: 10px 12px !important;
+  font-size: 13px !important;
+}
+
+.empty-row {
+  color: var(--ga-text-soft) !important;
+  font-size: 14px !important;
+}
+
+/* Modais */
+.tenant-modal-backdrop,
+.modal-backdrop,
+.receipts-modal-backdrop {
+  background: rgba(15, 35, 63, .45) !important;
+  backdrop-filter: blur(1px);
+}
+
+.tenant-modal,
+.modal,
+.receipts-modal {
+  background: var(--ga-surface) !important;
+  color: var(--ga-text) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 28px 70px rgba(15, 35, 63, .24) !important;
+  border: 1px solid var(--ga-border) !important;
+}
+
+.tenant-modal-title,
+.modal-title,
+.receipts-modal-title {
+  border-bottom: 1px solid var(--ga-border) !important;
+}
+
+.tenant-modal-title h3,
+.modal-title h3,
+.receipts-modal-title h3 {
+  color: var(--ga-text) !important;
+  font-size: 21px !important;
+  font-weight: 750 !important;
+}
+
+.tenant-modal-actions,
+.modal-actions,
+.receipts-modal-actions {
+  border-top: 1px solid var(--ga-border) !important;
+  background: #fbfcfe !important;
+}
+
+/* Cards de indicadores */
+.tracking-cards,
+.reports-cards,
+.contracts-cards,
+.receipts-cards {
+  gap: 14px !important;
+}
+
+.tracking-cards > div,
+.reports-card,
+.contracts-card,
+.receipts-card {
+  background: var(--ga-surface) !important;
+  border: 1px solid var(--ga-border) !important;
+  border-radius: var(--ga-radius) !important;
+  box-shadow: var(--ga-shadow) !important;
+  padding: 15px 16px !important;
+}
+
+.tracking-cards span,
+.reports-card span,
+.contracts-card span,
+.receipts-card span {
+  color: var(--ga-text-soft) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+.tracking-cards strong,
+.reports-card strong,
+.contracts-card strong,
+.receipts-card strong {
+  color: var(--ga-text) !important;
+  font-size: 22px !important;
+  font-weight: 750 !important;
+}
+
+/* Toolbars / filtros */
+.contracts-toolbar,
+.tracking-filters,
+.tenant-search-row,
+.availability-toolbar,
+.receipts-toolbar {
+  gap: 10px !important;
+  margin-bottom: 16px !important;
+}
+
+/* Prédios / grupos */
+.contract-building-header,
+.closed-toggle {
+  color: var(--ga-text) !important;
+}
+
+.contract-building-header h3,
+.panel h3,
+.reports-section h3 {
+  color: var(--ga-text) !important;
+  font-size: 18px !important;
+  font-weight: 750 !important;
+}
+
+.contract-building-header p {
+  color: var(--ga-text-soft) !important;
+  font-size: 13px !important;
+}
+
+.closed-toggle {
+  background: var(--ga-surface) !important;
+  border-color: var(--ga-border) !important;
+  border-radius: var(--ga-radius) !important;
+  font-size: 15px !important;
+}
+
+/* Sidebar / AppShell */
+.app-shell {
+  background: var(--ga-bg) !important;
+}
+
+.sidebar {
+  background: #0f3557 !important;
+  color: #fff !important;
+}
+
+.sidebar .brand h1 {
+  color: #fff !important;
+  font-family: var(--ga-font) !important;
+  font-size: 25px !important;
+  line-height: 1.1 !important;
+  font-weight: 800 !important;
+}
+
+.sidebar .brand p {
+  color: rgba(255,255,255,.72) !important;
+  font-size: 13px !important;
+}
+
+.sidebar nav a,
+.sidebar nav button,
+.menu-futuro,
+.logout-button {
+  font-family: var(--ga-font) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+}
+
+.sidebar nav a {
+  color: rgba(255,255,255,.86) !important;
+}
+
+.sidebar nav a:hover {
+  background: rgba(255,255,255,.08) !important;
+  color: #fff !important;
+}
+
+.sidebar nav a.active {
+  background: #fff !important;
+  color: #174f7a !important;
+  font-weight: 750 !important;
+}
+
+/* Login */
+.login-card,
+.auth-card {
+  background: #fff !important;
+  border: 1px solid var(--ga-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 16px 40px rgba(15, 35, 63, .10) !important;
+}
+
+.login-card h1,
+.auth-card h1 {
+  color: var(--ga-text) !important;
+  font-size: 28px !important;
+  font-weight: 800 !important;
+}
+
+/* Responsivo */
+@media (max-width: 900px) {
+  .content {
+    padding: 20px 16px !important;
+  }
+
+  .page-header h2,
+  .tenant-page-header h2,
+  .contracts-header h2,
+  .tracking-header h2,
+  .reports-header h2,
+  .receipts-header h2 {
+    font-size: 24px !important;
+  }
+
+  button,
+  .primary,
+  .secondary,
+  .danger {
+    min-height: 40px !important;
+  }
+}
+
+
+/* Resumo mensal: expansão dos apartamentos no padrão dos contratos encerrados */
+.summary-toggle {
+  width: auto !important;
+  min-height: 34px !important;
+  padding: 5px 8px !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--ga-text) !important;
+  font-weight: 750 !important;
+  font-size: 13px !important;
+  box-shadow: none !important;
+}
+
+.summary-toggle:hover {
+  color: var(--ga-primary) !important;
+  background: transparent !important;
+}
+
+
+/* =========================================================
+   V10 — DESTAQUE DOS PRÉDIOS + ÍCONES NO MENU
+   ========================================================= */
+
+/* Nomes de prédios com maior destaque nas telas principais */
+.monthly-summary .summary-table tbody td:first-child strong {
+  display: block !important;
+  font-size: 18px !important;
+  line-height: 1.25 !important;
+  font-weight: 800 !important;
+  color: var(--ga-text) !important;
+  margin-bottom: 3px !important;
+}
+
+.contract-building-header h3,
+.tenant-table-panel h3,
+.content .panel.table-wrap > div:first-child h3 {
+  font-size: 21px !important;
+  line-height: 1.25 !important;
+  font-weight: 800 !important;
+  color: var(--ga-text) !important;
+}
+
+/* Endereço fica menor para reforçar a hierarquia visual */
+.monthly-summary .summary-table tbody td:first-child span,
+.contract-building-header p {
+  font-size: 13px !important;
+  color: var(--ga-text-soft) !important;
+  font-weight: 500 !important;
+}
+
+/* Ícones vetoriais do menu lateral */
+.sidebar nav a {
+  display: flex !important;
+  align-items: center !important;
+  gap: 11px !important;
+}
+
+.sidebar .menu-icon {
+  flex: 0 0 auto !important;
+  opacity: .92 !important;
+}
+
+.sidebar .logout-button {
+  display: flex !important;
+  align-items: center !important;
+  gap: 11px !important;
+}
+
+.sidebar .logout-button .menu-icon {
+  flex: 0 0 auto !important;
+}
+@media (max-width: 850px) {
+  .monthly-summary .summary-table tbody td:first-child strong {
+    font-size: 17px !important;
+  }
+
+  .contract-building-header h3,
+  .tenant-table-panel h3,
+  .content .panel.table-wrap > div:first-child h3 {
+    font-size: 19px !important;
+  }
+}
+
+
+/* =========================================================
+   V11 — MENU FIXO E MAIS LEGÍVEL
+   ========================================================= */
+
+/* Mantém o menu lateral visível durante toda a rolagem da página */
+.sidebar {
+  position: sticky !important;
+  top: 0 !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow-y: auto !important;
+  align-self: flex-start !important;
+  z-index: 20 !important;
+}
+
+/* Em layouts que usam grid/flex, garante que a sidebar não role junto */
+.app-shell {
+  align-items: flex-start !important;
+}
+
+/* Aumenta a leitura e o destaque do menu */
+.sidebar nav a,
+.sidebar nav button,
+.sidebar .logout-button,
+.menu-futuro {
+  font-size: 16px !important;
+  line-height: 1.2 !important;
+  font-weight: 700 !important;
+  min-height: 44px !important;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+
+/* Rolagem discreta dentro da própria barra lateral, caso a tela seja baixa */
+.sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,.22);
+  border-radius: 999px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+
+.summary-toggle {
+  min-width: 34px !important;
+  width: 34px !important;
+  padding: 5px !important;
+  font-size: 14px !important;
+  text-align: center !important;
+}
+.summary-table th:last-child,
+.summary-table td:last-child {
+  width: 52px !important;
+}
+
+
+/* V13 — linha inteira do prédio abre/fecha os apartamentos */
+.summary-building-row {
+  cursor: pointer !important;
+}
+
+.summary-building-row:hover td {
+  background: #f3f8fc !important;
+}
+
+.summary-building-row:focus-visible {
+  outline: 2px solid var(--ga-primary) !important;
+  outline-offset: -2px !important;
+}
+
+
+/* V14 — Configurações + privacidade da tela Início */
+.dashboard-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  flex-wrap: wrap !important;
+}
+
+.dashboard-header-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.privacy-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  min-height: 40px !important;
+  padding: 8px 11px !important;
+  border: 1px solid var(--ga-border-strong) !important;
+  background: #fff !important;
+  color: var(--ga-primary) !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+.privacy-button:hover {
+  background: var(--ga-primary-soft) !important;
+}
+
+@media (max-width: 650px) {
+  .dashboard-header-actions {
+    width: 100% !important;
+  }
+
+  .dashboard-header-actions .month-picker {
+    flex: 1 !important;
+  }
+}
+
+
+/* =========================================================
+   IDENTIDADE VISUAL — ALUGUE FÁCIL
+   ========================================================= */
+
+:root {
+  --af-navy: #0f2d52;
+  --af-blue: #1976d2;
+  --af-blue-2: #1f8df5;
+  --af-blue-soft: #e8f3ff;
+  --af-muted: #64748b;
+  --af-bg: #f5f8fc;
+}
+
+.sidebar {
+  background:
+    linear-gradient(180deg, #0f2d52 0%, #10385f 100%) !important;
+  border-right: 1px solid rgba(255,255,255,.06) !important;
+}
+
+.brand-alugue-facil {
+  padding: 24px 18px 18px !important;
+  border-bottom: 1px solid rgba(255,255,255,.10) !important;
+  margin-bottom: 10px !important;
+}
+
+.brand-alugue-facil .brand-logo {
+  display: block !important;
+  width: 198px !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  filter: brightness(0) invert(1) !important;
+}
+
+.brand-alugue-facil .brand-company {
+  margin: 9px 0 0 !important;
+  color: rgba(255,255,255,.72) !important;
+  font-size: 12px !important;
+  line-height: 1.3 !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.sidebar nav a.active {
+  background: linear-gradient(90deg, #1976d2, #1f8df5) !important;
+  color: #fff !important;
+  box-shadow: 0 6px 16px rgba(25,118,210,.22) !important;
+}
+
+.sidebar nav a:hover {
+  background: rgba(255,255,255,.09) !important;
+}
+
+.sidebar nav a.active .menu-icon {
+  color: #fff !important;
+}
+
+.primary {
+  background: linear-gradient(135deg, #1976d2, #1f8df5) !important;
+  border-color: #1976d2 !important;
+}
+
+.primary:hover {
+  background: linear-gradient(135deg, #125fae, #1976d2) !important;
+}
+
+.secondary {
+  color: #1976d2 !important;
+  border-color: #1976d2 !important;
+}
+
+.secondary:hover {
+  background: #e8f3ff !important;
+}
+
+thead th {
+  background: #eaf4ff !important;
+}
+
+.badge.disponivel {
+  background: #e8f3ff !important;
+  color: #1266b3 !important;
+}
+
+.page-header h2,
+.dashboard-header h2,
+.content > h2 {
+  color: #0f2d52 !important;
+}
+
+.auth-page,
+.reset-page {
+  background:
+    radial-gradient(circle at 15% 10%, rgba(31,141,245,.16), transparent 32%),
+    linear-gradient(180deg, #f8fbff 0%, #eef5fc 100%) !important;
+}
+
+.auth-card,
+.reset-card {
+  border-color: #d8e4f0 !important;
+  box-shadow: 0 20px 50px rgba(15,45,82,.12) !important;
+}
+
+
+/* =========================================================
+   V15 — DESIGN SYSTEM / PADRONIZAÇÃO GERAL ALUGUE FÁCIL
+   Camada final de consistência visual para todas as telas.
+   ========================================================= */
+
+:root {
+  --af-page-max: 1600px;
+  --af-space-1: 6px;
+  --af-space-2: 10px;
+  --af-space-3: 14px;
+  --af-space-4: 18px;
+  --af-space-5: 24px;
+  --af-control-h: 42px;
+  --af-button-h: 38px;
+  --af-card-radius: 12px;
+  --af-modal-radius: 16px;
+  --af-shadow-card: 0 1px 3px rgba(15,45,82,.05);
+  --af-shadow-modal: 0 24px 70px rgba(15,23,42,.22);
+}
+
+/* Estrutura geral */
+body {
+  margin: 0 !important;
+}
+
+.app-shell {
+  grid-template-columns: 260px minmax(0,1fr) !important;
+  min-height: 100vh !important;
+}
+
+.content {
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: 26px 30px 42px !important;
+}
+
+.content > * {
+  max-width: var(--af-page-max);
+}
+
+/* Sidebar */
+.sidebar {
+  width: 260px !important;
+  padding: 18px 14px !important;
+}
+
+.brand-alugue-facil {
+  padding: 10px 10px 17px !important;
+  margin-bottom: 10px !important;
+}
+
+.brand-alugue-facil .brand-logo {
+  width: 190px !important;
+}
+
+.sidebar nav {
+  gap: 5px !important;
+}
+
+.sidebar nav a,
+.sidebar .logout-button,
+.menu-futuro {
+  width: 100% !important;
+  min-height: 42px !important;
+  padding: 10px 11px !important;
+  border-radius: 9px !important;
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  line-height: 1.2 !important;
+}
+
+.sidebar nav a,
+.sidebar .logout-button {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.sidebar .menu-icon {
+  width: 18px !important;
+  height: 18px !important;
+  flex: 0 0 18px !important;
+}
+
+.sidebar .logout-button {
+  margin-top: 6px !important;
+}
+
+/* Cabeçalhos */
+.page-header,
+.tenant-page-header,
+.contracts-header,
+.tracking-header,
+.reports-header,
+.receipts-header,
+.monthly-header,
+.controle-mensal-header,
+.available-header,
+.dashboard-header {
+  min-height: 44px !important;
+  margin: 0 0 20px !important;
+  gap: 14px !important;
+}
+
+.page-header h2,
+.tenant-page-header h2,
+.contracts-header h2,
+.tracking-header h2,
+.reports-header h2,
+.receipts-header h2,
+.monthly-header h2,
+.controle-mensal-header h2,
+.available-header h2,
+.dashboard-header h2,
+.content > h2 {
+  font-size: 26px !important;
+  line-height: 1.2 !important;
+  font-weight: 780 !important;
+  letter-spacing: -.025em !important;
+}
+
+.page-header p,
+.tenant-page-header p,
+.contracts-header p,
+.tracking-header p,
+.reports-header p,
+.receipts-header p,
+.monthly-header p,
+.controle-mensal-header p,
+.available-header p {
+  margin-top: 5px !important;
+  font-size: 13px !important;
+  color: var(--ga-text-soft) !important;
+}
+
+/* Superfícies */
+.panel,
+.contract-building,
+.reports-section,
+.tracking-building,
+.receipts-building,
+.monthly-panel,
+.controle-mensal-predio,
+.available-card,
+.available-unit,
+.available-empty,
+.receipts-empty,
+.dashboard-card,
+.monthly-summary,
+.backup-panel,
+.backup-history-panel {
+  border: 1px solid var(--ga-border) !important;
+  border-radius: var(--af-card-radius) !important;
+  background: #fff !important;
+  box-shadow: var(--af-shadow-card) !important;
+}
+
+.panel {
+  padding: 18px !important;
+}
+
+/* Campos */
+label {
+  gap: 7px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  min-height: var(--af-control-h) !important;
+  padding: 9px 11px !important;
+  border: 1px solid var(--ga-border-strong) !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  color: var(--ga-text) !important;
+  font-size: 14px !important;
+}
+
+textarea {
+  min-height: 96px !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--ga-primary) !important;
+  box-shadow: 0 0 0 3px rgba(25,118,210,.12) !important;
+}
+
+/* Botões */
+button,
+.primary,
+.secondary,
+.danger {
+  min-height: var(--af-button-h) !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  line-height: 1.15 !important;
+  white-space: nowrap;
+}
+
+.actions,
+.contract-actions,
+.tenant-action-buttons,
+.tracking-actions,
+.receipts-actions,
+.backup-actions,
+.controle-mensal-actions,
+.receipts-header-actions,
+.dashboard-header-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  flex-wrap: wrap !important;
+}
+
+/* Ações de tabela sempre compactas e alinhadas */
+table .primary,
+table .secondary,
+table .danger,
+table .link-button {
+  min-height: 34px !important;
+  padding: 7px 10px !important;
+  font-size: 12px !important;
+}
+
+/* Tabelas */
+.table-wrap,
+.contracts-scroll,
+.reports-table-wrap,
+.tracking-table-wrap,
+.receipts-table-wrap,
+.backup-history-table-wrap {
+  border-radius: var(--af-card-radius) !important;
+}
+
+table {
+  font-size: 13px !important;
+}
+
+thead th {
+  height: 42px !important;
+  padding: 10px 11px !important;
+  background: #eaf4ff !important;
+  color: #173b60 !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: .01em !important;
+}
+
+tbody td {
+  min-height: 44px !important;
+  padding: 10px 11px !important;
+  font-size: 13px !important;
+}
+
+tbody tr:hover td {
+  background: #f8fbff;
+}
+
+/* Status */
+.badge,
+.status-pill,
+.tracking-status,
+.receipts-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 25px !important;
+  padding: 4px 9px !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+/* Mensagens */
+.error,
+.backup-success,
+.settings-success,
+.login-success,
+.reset-success {
+  border-radius: 9px !important;
+  padding: 11px 12px !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+/* Filtros e buscas */
+.contracts-toolbar,
+.tracking-filters,
+.available-filters,
+.tenant-search-row {
+  gap: 10px !important;
+  margin-bottom: 16px !important;
+}
+
+.contracts-toolbar input,
+.tracking-filters input,
+.tenant-search-row input {
+  min-height: var(--af-control-h) !important;
+}
+
+/* Cards de indicadores */
+.dashboard-cards,
+.tracking-cards,
+.reports-cards,
+.contracts-cards {
+  gap: 14px !important;
+}
+
+.dashboard-card,
+.tracking-cards > div,
+.reports-card,
+.contracts-card {
+  min-height: 104px !important;
+  padding: 16px 17px !important;
+  border-radius: var(--af-card-radius) !important;
+}
+
+.dashboard-card span,
+.tracking-cards span,
+.reports-card span,
+.contracts-card span {
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  color: var(--ga-text-soft) !important;
+}
+
+.dashboard-card strong,
+.tracking-cards strong,
+.reports-card strong,
+.contracts-card strong {
+  font-size: 27px !important;
+  line-height: 1.15 !important;
+}
+
+/* Prédios / grupos */
+.contract-building-header,
+.tracking-building-head,
+.receipts-building-head,
+.controle-mensal-predio-head {
+  padding: 14px 16px !important;
+  border-bottom: 1px solid var(--ga-border) !important;
+  background: #fbfdff !important;
+}
+
+.contract-building-header h3,
+.tracking-building-head h3,
+.receipts-building-head h3,
+.controle-mensal-predio-head h3 {
+  margin: 0 !important;
+  font-size: 17px !important;
+  color: var(--ga-text) !important;
+}
+
+/* Modais: um único padrão */
+.tenant-modal-backdrop,
+.tracking-modal-bg,
+.receipts-modal-bg {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1000 !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 20px !important;
+  background: rgba(15,23,42,.48) !important;
+  backdrop-filter: blur(2px);
+}
+
+.tenant-modal,
+.tracking-modal,
+.receipts-modal {
+  width: min(760px, calc(100vw - 32px)) !important;
+  max-height: calc(100vh - 40px) !important;
+  overflow: auto !important;
+  border-radius: var(--af-modal-radius) !important;
+  background: #fff !important;
+  box-shadow: var(--af-shadow-modal) !important;
+}
+
+.tenant-modal-title,
+.tracking-modal-head,
+.receipts-modal-head {
+  min-height: 66px !important;
+  padding: 17px 20px !important;
+  border-bottom: 1px solid var(--ga-border) !important;
+}
+
+.tenant-modal-title h3,
+.tracking-modal-head h3,
+.receipts-modal-head h3 {
+  margin: 0 !important;
+  font-size: 19px !important;
+  line-height: 1.2 !important;
+}
+
+.tenant-modal-body {
+  padding: 18px 20px !important;
+}
+
+.tenant-form-grid,
+.tracking-form-grid,
+.receipts-form-grid {
+  gap: 14px !important;
+}
+
+.tenant-form-grid label {
+  font-size: 13px !important;
+}
+
+.tenant-form-grid input,
+.tenant-form-grid select,
+.tenant-form-grid textarea {
+  min-height: var(--af-control-h) !important;
+  font-size: 14px !important;
+}
+
+.tenant-modal-actions,
+.tracking-modal-actions,
+.receipts-modal-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 14px 20px !important;
+  border-top: 1px solid var(--ga-border) !important;
+  background: #fbfdff !important;
+}
+
+.tenant-modal-actions button,
+.tracking-modal-actions button,
+.receipts-modal-actions button {
+  min-width: 110px !important;
+}
+
+/* Botão fechar modal */
+.modal-close,
+.tenant-modal-title > button,
+.tracking-modal-head > button,
+.receipts-modal-head > button {
+  width: 34px !important;
+  min-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #64748b !important;
+  font-size: 24px !important;
+  display: grid !important;
+  place-items: center !important;
+}
+
+.modal-close:hover,
+.tenant-modal-title > button:hover,
+.tracking-modal-head > button:hover,
+.receipts-modal-head > button:hover {
+  background: #eef4f9 !important;
+  color: var(--ga-text) !important;
+}
+
+/* Tela disponível */
+.available-list {
+  gap: 14px !important;
+}
+
+.available-unit {
+  min-height: 150px !important;
+  padding: 17px !important;
+}
+
+.available-unit h3 {
+  font-size: 18px !important;
+}
+
+.available-unit p {
+  font-size: 14px !important;
+}
+
+/* Backup */
+.backup-panel,
+.backup-history-panel {
+  padding: 18px !important;
+}
+
+.backup-actions {
+  margin-top: 16px !important;
+}
+
+/* Configurações */
+.settings-card {
+  gap: 17px !important;
+}
+
+.settings-title h3 {
+  font-size: 17px !important;
+}
+
+.settings-icon {
+  width: 38px !important;
+  height: 38px !important;
+}
+
+/* Login e recuperação */
+.auth-card,
+.reset-card {
+  width: min(430px, 100%) !important;
+  border-radius: 16px !important;
+}
+
+.auth-brand-logo,
+.reset-brand-logo {
+  width: 225px !important;
+}
+
+/* Responsividade */
+@media (max-width: 1050px) {
+  .app-shell {
+    grid-template-columns: 230px minmax(0,1fr) !important;
+  }
+
+  .sidebar {
+    width: 230px !important;
+  }
+
+  .content {
+    padding: 22px 20px 36px !important;
+  }
+
+  .dashboard-cards.first-row,
+  .dashboard-cards.second-row,
+  .tracking-cards,
+  .reports-cards {
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    display: block !important;
+  }
+
+  .sidebar {
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: auto !important;
+    padding: 12px !important;
+  }
+
+  .brand-alugue-facil {
+    padding: 6px 8px 12px !important;
+  }
+
+  .brand-alugue-facil .brand-logo {
+    width: 170px !important;
+  }
+
+  .sidebar nav {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .sidebar nav a,
+  .sidebar .logout-button {
+    min-width: 0 !important;
+    font-size: 13px !important;
+  }
+
+  .content {
+    padding: 18px 14px 30px !important;
+  }
+
+  .page-header,
+  .tenant-page-header,
+  .contracts-header,
+  .tracking-header,
+  .reports-header,
+  .receipts-header,
+  .monthly-header,
+  .controle-mensal-header,
+  .available-header,
+  .dashboard-header {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .dashboard-cards.first-row,
+  .dashboard-cards.second-row,
+  .tracking-cards,
+  .reports-cards,
+  .contracts-cards,
+  .available-list {
+    grid-template-columns: 1fr !important;
+  }
+
+  .actions,
+  .contract-actions,
+  .tenant-action-buttons,
+  .tracking-actions,
+  .receipts-actions {
+    flex-wrap: wrap !important;
+  }
+
+  .tenant-form-grid,
+  .tracking-form-grid,
+  .receipts-form-grid,
+  .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .tenant-full,
+  .receipts-full,
+  .full {
+    grid-column: auto !important;
+  }
+
+  .tenant-modal-actions,
+  .tracking-modal-actions,
+  .receipts-modal-actions {
+    flex-direction: column-reverse !important;
+  }
+
+  .tenant-modal-actions button,
+  .tracking-modal-actions button,
+  .receipts-modal-actions button {
+    width: 100% !important;
+  }
+}

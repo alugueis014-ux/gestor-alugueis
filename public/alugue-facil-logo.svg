@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 92">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f8df5"/>
+      <stop offset="1" stop-color="#0f5fb8"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(6 8)">
+    <path d="M4 26 32 4l28 22v34H4z" fill="none" stroke="#1f8df5" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M18 29h11v31H18z" fill="url(#g)"/>
+    <path d="M34 19h11v41H34z" fill="#0f2d52"/>
+    <path d="M29 29h5v31h-5z" fill="#dceeff"/>
+  </g>
+  <text x="82" y="39" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="800" fill="#0f2d52">ALUGUE</text>
+  <text x="82" y="68" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="800" fill="#1976d2">FÁCIL</text>
+  <text x="206" y="66" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="600" letter-spacing="1.6" fill="#64748b">GESTÃO DE ALUGUÉIS</text>
+</svg>

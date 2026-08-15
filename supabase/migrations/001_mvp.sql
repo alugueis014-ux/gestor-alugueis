@@ -1,0 +1,9 @@
+drop table if exists public.teste_sistema;
+create table if not exists public.predios(id uuid primary key default gen_random_uuid(),proprietario_id uuid not null references auth.users(id) on delete cascade,nome text not null,endereco text,observacoes text,criado_em timestamptz not null default now());
+create table if not exists public.apartamentos(id uuid primary key default gen_random_uuid(),proprietario_id uuid not null references auth.users(id) on delete cascade,predio_id uuid not null references public.predios(id) on delete restrict,numero text not null,situacao text not null default 'disponivel' check(situacao in('disponivel','ocupado','reservado','manutencao')),observacoes text,criado_em timestamptz not null default now(),unique(predio_id,numero));
+create table if not exists public.inquilinos(id uuid primary key default gen_random_uuid(),proprietario_id uuid not null references auth.users(id) on delete cascade,nome text not null,cpf text,telefone text,email text,status text not null default 'ativo' check(status in('ativo','inativo')),data_saida date,observacoes text,criado_em timestamptz not null default now());
+alter table public.predios enable row level security;alter table public.apartamentos enable row level security;alter table public.inquilinos enable row level security;
+create policy "predios_do_usuario" on public.predios for all to authenticated using(auth.uid()=proprietario_id) with check(auth.uid()=proprietario_id);
+create policy "apartamentos_do_usuario" on public.apartamentos for all to authenticated using(auth.uid()=proprietario_id) with check(auth.uid()=proprietario_id);
+create policy "inquilinos_do_usuario" on public.inquilinos for all to authenticated using(auth.uid()=proprietario_id) with check(auth.uid()=proprietario_id);
+grant select,insert,update,delete on public.predios,public.apartamentos,public.inquilinos to authenticated;

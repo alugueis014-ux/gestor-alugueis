@@ -208,24 +208,21 @@ function prepararBackupComNovosIds(dados, empresaId, userId) {
     predios: predios.map(item => ({
       ...item,
       id: remap(ids.predios, item.id),
-      empresa_id: empresaId,
-      proprietario_id: userId
+      empresa_id: empresaId
     })),
 
     apartamentos: apartamentos.map(item => ({
       ...item,
       id: remap(ids.apartamentos, item.id),
       predio_id: remap(ids.predios, item.predio_id),
-      empresa_id: empresaId,
-      proprietario_id: userId
+      empresa_id: empresaId
     })),
 
     inquilinos: inquilinos.map(item => {
       const copia = {
         ...item,
         id: remap(ids.inquilinos, item.id),
-        empresa_id: empresaId,
-        proprietario_id: userId
+        empresa_id: empresaId
       };
 
       // Compatibilidade caso algum backup possua vínculos extras.
@@ -247,8 +244,7 @@ function prepararBackupComNovosIds(dados, empresaId, userId) {
         inquilino_id: remap(ids.inquilinos, item.inquilino_id),
         apartamento_id: remap(ids.apartamentos, item.apartamento_id),
         predio_id: predioAntigo ? remap(ids.predios, predioAntigo) : predioAntigo,
-        empresa_id: empresaId,
-        proprietario_id: userId
+        empresa_id: empresaId
       };
     }),
 
@@ -259,8 +255,7 @@ function prepararBackupComNovosIds(dados, empresaId, userId) {
       inquilino_id: remap(ids.inquilinos, item.inquilino_id),
       apartamento_id: remap(ids.apartamentos, item.apartamento_id),
       predio_id: remap(ids.predios, item.predio_id),
-      empresa_id: empresaId,
-      proprietario_id: userId
+      empresa_id: empresaId
     })),
 
     anexos: anexos.map(item => ({
@@ -270,8 +265,7 @@ function prepararBackupComNovosIds(dados, empresaId, userId) {
       inquilino_id: remap(ids.inquilinos, item.inquilino_id),
       apartamento_id: remap(ids.apartamentos, item.apartamento_id),
       predio_id: remap(ids.predios, item.predio_id),
-      empresa_id: empresaId,
-      proprietario_id: userId
+      empresa_id: empresaId
     })),
 
     historico: historico.map(item => ({
@@ -283,8 +277,7 @@ function prepararBackupComNovosIds(dados, empresaId, userId) {
       contrato_id: remap(ids.contratos, item.contrato_id),
       recebimento_id: remap(ids.recebimentos, item.recebimento_id),
       anexo_id: remap(ids.anexos, item.anexo_id),
-      empresa_id: empresaId,
-      proprietario_id: userId
+      empresa_id: empresaId
     }))
   };
 }
@@ -303,8 +296,7 @@ async function importarDadosNoEscopo(dados, empresaId, userId, { remapearIds = t
 
     let registros = registrosOriginais.map(item => ({
       ...item,
-      empresa_id: empresaId,
-      proprietario_id: userId
+      empresa_id: empresaId
     }));
 
     try {

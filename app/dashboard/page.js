@@ -32,6 +32,8 @@ export default function Dashboard() {
   const [modalRecebimento, setModalRecebimento] = useState(null);
   const [candidatosRecebimento, setCandidatosRecebimento] = useState([]);
   const [salvandoRecebimento, setSalvandoRecebimento] = useState(false);
+  const [formaPagamentoRapido, setFormaPagamentoRapido] = useState("pix");
+  const [etapaRecebimento, setEtapaRecebimento] = useState("confirmacao");
 
   useEffect(() => {
     carregar();
@@ -442,6 +444,8 @@ export default function Dashboard() {
     }
 
     if (candidatos.length === 1) {
+      setFormaPagamentoRapido("pix");
+      setEtapaRecebimento("confirmacao");
       setModalRecebimento(candidatos[0]);
       return;
     }
@@ -496,7 +500,7 @@ export default function Dashboard() {
       .update({
         valor_recebido: valor,
         data_pagamento: hojeISO(),
-        forma_pagamento: "pix",
+        forma_pagamento: formaPagamentoRapido,
         status: "pago",
         atualizado_em: new Date().toISOString()
       })
@@ -510,6 +514,8 @@ export default function Dashboard() {
     }
 
     setModalRecebimento(null);
+    setFormaPagamentoRapido("pix");
+    setEtapaRecebimento("confirmacao");
     setCandidatosRecebimento([]);
     setComandoRecebimento("");
     await carregar();
@@ -797,28 +803,114 @@ export default function Dashboard() {
           </div>
         </section>
         {modalRecebimento && (
-          <div className="quick-modal-backdrop" onMouseDown={() => setModalRecebimento(null)}>
+          <div
+            className="quick-modal-backdrop"
+            onMouseDown={() => {
+              setModalRecebimento(null);
+              setEtapaRecebimento("confirmacao");
+            }}
+          >
             <div className="quick-modal" onMouseDown={e => e.stopPropagation()}>
               <div className="quick-modal-head">
                 <div>
-                  <h3>Confirmar recebimento</h3>
-                  <p>Confira antes de dar baixa.</p>
+                  <h3>
+                    {etapaRecebimento === "confirmacao"
+                      ? "Confirmar recebimento"
+                      : "Forma de pagamento"}
+                  </h3>
+                  <p>
+                    {etapaRecebimento === "confirmacao"
+                      ? "Confira os dados antes de continuar."
+                      : "Selecione como o pagamento foi recebido."}
+                  </p>
                 </div>
-                <button type="button" onClick={() => setModalRecebimento(null)}>×</button>
-              </div>
-              <div className="quick-modal-body">
-                <div><span>Inquilino</span><b>{modalRecebimento.contratos?.inquilinos?.nome || "-"}</b></div>
-                <div><span>Imóvel</span><b>{modalRecebimento.contratos?.apartamentos?.predios?.nome || "-"}</b></div>
-                <div><span>Apartamento</span><b>{modalRecebimento.contratos?.apartamentos?.numero || "-"}</b></div>
-                <div><span>Competência</span><b>{mes}</b></div>
-                <div><span>Valor</span><b>{dinheiro(modalRecebimento.valor_previsto)}</b></div>
-                <div><span>Data do pagamento</span><b>{new Date().toLocaleDateString("pt-BR")}</b></div>
-              </div>
-              <div className="quick-modal-actions">
-                <button type="button" className="secondary" onClick={() => setModalRecebimento(null)}>Cancelar</button>
-                <button type="button" className="quick-confirm" disabled={salvandoRecebimento} onClick={confirmarRecebimentoRapido}>
-                  {salvandoRecebimento ? "Salvando..." : "Confirmar e dar baixa"}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalRecebimento(null);
+                    setEtapaRecebimento("confirmacao");
+                  }}
+                >
+                  ×
                 </button>
+              </div>
+
+              {etapaRecebimento === "confirmacao" ? (
+                <div className="quick-modal-body">
+                  <div><span>Inquilino</span><b>{modalRecebimento.contratos?.inquilinos?.nome || "-"}</b></div>
+                  <div><span>Imóvel</span><b>{modalRecebimento.contratos?.apartamentos?.predios?.nome || "-"}</b></div>
+                  <div><span>Apartamento</span><b>{modalRecebimento.contratos?.apartamentos?.numero || "-"}</b></div>
+                  <div><span>Competência</span><b>{mes}</b></div>
+                  <div><span>Valor</span><b>{dinheiro(modalRecebimento.valor_previsto)}</b></div>
+                  <div><span>Data do pagamento</span><b>{new Date().toLocaleDateString("pt-BR")}</b></div>
+                </div>
+              ) : (
+                <div className="quick-payment-step">
+                  <div className="quick-payment-options">
+                    {[
+                      ["pix", "PIX"],
+                      ["dinheiro", "Dinheiro"],
+                      ["transferencia", "Transferência"],
+                      ["cartao", "Cartão"],
+                      ["boleto", "Boleto"],
+                      ["outro", "Outro"]
+                    ].map(([valor, rotulo]) => (
+                      <button
+                        key={valor}
+                        type="button"
+                        className={`quick-payment-option ${formaPagamentoRapido === valor ? "active" : ""}`}
+                        onClick={() => setFormaPagamentoRapido(valor)}
+                      >
+                        {rotulo}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="quick-modal-actions">
+                {etapaRecebimento === "confirmacao" ? (
+                  <>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        setModalRecebimento(null);
+                        setEtapaRecebimento("confirmacao");
+                      }}
+                    >
+                      Cancelar
+                    </button>
+
+                    <button
+                      type="button"
+                      className="quick-confirm"
+                      onClick={() => setEtapaRecebimento("forma")}
+                    >
+                      Confirmar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setEtapaRecebimento("confirmacao")}
+                      disabled={salvandoRecebimento}
+                    >
+                      Voltar
+                    </button>
+
+                    <button
+                      type="button"
+                      className="quick-confirm"
+                      disabled={salvandoRecebimento}
+                      onClick={confirmarRecebimentoRapido}
+                    >
+                      {salvandoRecebimento ? "Salvando..." : "Dar baixa"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -842,6 +934,40 @@ export default function Dashboard() {
           :global(.dashboard-card-link:focus-visible){
             outline:3px solid rgba(37,99,235,.22);
             outline-offset:2px;
+          }
+
+          :global(.quick-payment-step){
+            padding:20px;
+          }
+
+          :global(.quick-payment-options){
+            display:grid;
+            grid-template-columns:repeat(3,minmax(0,1fr));
+            gap:10px;
+          }
+
+          :global(.quick-payment-option){
+            min-height:46px;
+            padding:10px 12px;
+            border:1px solid #cbd5e1;
+            border-radius:10px;
+            background:#fff;
+            color:#173b5f;
+            font-weight:800;
+            cursor:pointer;
+          }
+
+          :global(.quick-payment-option.active){
+            border-color:#1677d2;
+            background:#eaf4ff;
+            color:#0b5fae;
+            box-shadow:0 0 0 2px rgba(22,119,210,.10);
+          }
+
+          @media (max-width:560px){
+            :global(.quick-payment-options){
+              grid-template-columns:repeat(2,minmax(0,1fr));
+            }
           }
 
           :global(.dashboard-card-link small){

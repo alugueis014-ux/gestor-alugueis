@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { obterEmpresaId } from "../../lib/empresa";
 
 function moeda(valor) {
   return Number(valor || 0).toLocaleString("pt-BR", {
@@ -40,59 +41,70 @@ export default function ControleMensal() {
     setCarregando(true);
     setErro("");
 
-    const competencia = `${mes}-01`;
+    try {
+      const empresaId = await obterEmpresaId();
+      const competencia = `${mes}-01`;
 
-    const [apt, con, rec] = await Promise.all([
-      supabase
-        .from("apartamentos")
-        .select(`
-          id,
-          numero,
-          situacao,
-          predio_id,
-          predios(id,nome,endereco)
-        `)
-        .order("numero"),
-      supabase
-        .from("contratos")
-        .select(`
-          id,
-          apartamento_id,
-          valor_aluguel,
-          data_inicio,
-          data_fim,
-          status,
-          inquilinos(id,nome,status)
-        `)
-        .order("data_inicio"),
-      supabase
-        .from("recebimentos")
-        .select(`
-          id,
-          contrato_id,
-          competencia,
-          valor_previsto,
-          valor_recebido,
-          data_pagamento,
-          status
-        `)
-        .eq("competencia", competencia)
-    ]);
+      const [apt, con, rec] = await Promise.all([
+        supabase
+          .from("apartamentos")
+          .select(`
+            id,
+            empresa_id,
+            numero,
+            situacao,
+            predio_id,
+            predios!inner(id,nome,endereco,empresa_id)
+          `)
+          .eq("empresa_id", empresaId)
+          .eq("predios.empresa_id", empresaId)
+          .order("numero"),
+        supabase
+          .from("contratos")
+          .select(`
+            id,
+            empresa_id,
+            apartamento_id,
+            inquilino_id,
+            valor_aluguel,
+            data_inicio,
+            data_fim,
+            status,
+            inquilinos!inner(id,nome,status,empresa_id)
+          `)
+          .eq("empresa_id", empresaId)
+          .eq("inquilinos.empresa_id", empresaId)
+          .order("data_inicio"),
+        supabase
+          .from("recebimentos")
+          .select(`
+            id,
+            empresa_id,
+            contrato_id,
+            competencia,
+            valor_previsto,
+            valor_recebido,
+            data_pagamento,
+            status
+          `)
+          .eq("empresa_id", empresaId)
+          .eq("competencia", competencia)
+      ]);
 
-    const falha = apt.error || con.error || rec.error;
-    if (falha) {
-      setErro(falha.message);
+      const falha = apt.error || con.error || rec.error;
+      if (falha) throw falha;
+
+      setApartamentos(apt.data || []);
+      setContratos(con.data || []);
+      setRecebimentos(rec.data || []);
+    } catch (e) {
+      setErro(e.message || "Não foi possível carregar o controle mensal.");
       setApartamentos([]);
       setContratos([]);
       setRecebimentos([]);
+    } finally {
       setCarregando(false);
-      return;
     }
-
-    setApartamentos(apt.data || []);
-    setContratos(con.data || []);
-    setRecebimentos(rec.data || []);
-    setCarregando(false);
   }
 
   const linhas = useMemo(() => {
@@ -103,24 +115,133 @@ export default function ControleMensal() {
     const contratosDoMes = contratos.filter((c) => {
       const inicio = c.data_inicio?.slice(0, 7);
       const fim = c.data_fim?.slice(0, 7);
-      return (!inicio || inicio <= mes) && (!fim || fim >= mes);
+
+      return (
+        c.status !== "cancelado" &&
+        (!inicio || inicio <= mes) &&
+        (!fim || fim >= mes)
+      );
     });
+
+    /*
+      TRANSFERÊNCIA DE INQUILINO
+
+      Um mesmo inquilino pode alugar vários imóveis ao mesmo tempo.
+      Por isso NÃO deduplicamos pelo nome ou pelo inquilino_id.
+
+      Só tratamos como transferência quando:
+      - existe um contrato encerrado;
+      - existe outro contrato do MESMO inquilino no mesmo mês;
+      - o novo contrato começa na data de encerramento do anterior ou depois;
+      - o novo contrato permanece ativo (ou é claramente mais recente).
+
+      Nesse caso o contrato antigo deixa de aparecer no Controle Mensal,
+      evitando o mesmo inquilino em dois imóveis por causa da transferência.
+    */
+
+    const contratosPorInquilino = new Map();
+
+    for (const contrato of contratosDoMes) {
+      if (!contrato.inquilino_id) continue;
+
+      if (!contratosPorInquilino.has(contrato.inquilino_id)) {
+        contratosPorInquilino.set(contrato.inquilino_id, []);
+      }
+
+      contratosPorInquilino.get(contrato.inquilino_id).push(contrato);
+    }
+
+    const contratosTransferidos = new Set();
+    const origemTransferenciaPorDestino = new Map();
+
+    for (const lista of contratosPorInquilino.values()) {
+      const ordenados = [...lista].sort((a, b) =>
+        String(a.data_inicio || "").localeCompare(String(b.data_inicio || ""))
+      );
+
+      for (const antigo of ordenados) {
+        if (
+          String(antigo.status || "").toLowerCase() === "ativo" ||
+          !antigo.data_fim
+        ) {
+          continue;
+        }
+
+        const destino = ordenados
+          .filter(novo =>
+            novo.id !== antigo.id &&
+            novo.apartamento_id !== antigo.apartamento_id &&
+            !!novo.data_inicio &&
+            novo.data_inicio >= antigo.data_fim
+          )
+          .sort((a, b) => {
+            const ativoA = String(a.status || "").toLowerCase() === "ativo" ? 1 : 0;
+            const ativoB = String(b.status || "").toLowerCase() === "ativo" ? 1 : 0;
+
+            if (ativoA !== ativoB) return ativoB - ativoA;
+
+            return String(b.data_inicio || "").localeCompare(
+              String(a.data_inicio || "")
+            );
+          })[0];
+
+        if (destino) {
+          contratosTransferidos.add(antigo.id);
+
+          if (!origemTransferenciaPorDestino.has(destino.id)) {
+            origemTransferenciaPorDestino.set(destino.id, antigo.id);
+          }
+        }
+      }
+    }
+
+    const contratosVisiveis = contratosDoMes.filter(
+      c => !contratosTransferidos.has(c.id)
+    );
 
     const contratoPorApartamento = new Map();
-    contratosDoMes.forEach((contrato) => {
+
+    for (const contrato of contratosVisiveis) {
       const atual = contratoPorApartamento.get(contrato.apartamento_id);
 
-      // Se houver mais de um registro, prioriza o contrato ativo.
-      if (!atual || contrato.status === "ativo") {
+      if (!atual) {
+        contratoPorApartamento.set(contrato.apartamento_id, contrato);
+        continue;
+      }
+
+      const atualAtivo =
+        String(atual.status || "").toLowerCase() === "ativo" ? 1 : 0;
+      const novoAtivo =
+        String(contrato.status || "").toLowerCase() === "ativo" ? 1 : 0;
+
+      if (
+        novoAtivo > atualAtivo ||
+        (
+          novoAtivo === atualAtivo &&
+          String(contrato.data_inicio || "") > String(atual.data_inicio || "")
+        )
+      ) {
         contratoPorApartamento.set(contrato.apartamento_id, contrato);
       }
-    });
+    }
 
     return apartamentos
       .filter((a) => a.predios)
       .map((a) => {
         const contrato = contratoPorApartamento.get(a.id);
-        const recebimento = contrato ? porContrato.get(contrato.id) : null;
+
+        let recebimento = contrato ? porContrato.get(contrato.id) : null;
+
+        // Se foi uma transferência no mesmo mês e o pagamento ficou registrado
+        // no contrato anterior, usa esse pagamento somente para exibição no
+        // Controle Mensal. O histórico no banco continua intacto.
+        if (contrato && !recebimento) {
+          const contratoOrigemId = origemTransferenciaPorDestino.get(contrato.id);
+
+          if (contratoOrigemId) {
+            recebimento = porContrato.get(contratoOrigemId) || null;
+          }
+        }
 
         return {
           contratoId: contrato?.id || `sem-contrato-${a.id}`,
@@ -135,15 +256,22 @@ export default function ControleMensal() {
           dataPagamento: recebimento?.data_pagamento || "",
           pago:
             recebimento?.status === "pago" ||
-            Number(recebimento?.valor_recebido || 0) > 0
+            (
+              Number(recebimento?.valor_previsto || 0) > 0 &&
+              Number(recebimento?.valor_recebido || 0) >=
+                Number(recebimento?.valor_previsto || 0)
+            )
         };
       })
       .sort((a, b) => {
         const predio = a.predioNome.localeCompare(b.predioNome, "pt-BR");
         if (predio !== 0) return predio;
-        return String(a.apartamento).localeCompare(String(b.apartamento), "pt-BR", {
-          numeric: true
-        });
+
+        return String(a.apartamento).localeCompare(
+          String(b.apartamento),
+          "pt-BR",
+          { numeric: true }
+        );
       });
   }, [apartamentos, contratos, recebimentos, mes]);
 

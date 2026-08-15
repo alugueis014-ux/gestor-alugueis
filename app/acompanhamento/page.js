@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
 
 
 async function obterEmpresaId() {
@@ -69,6 +70,12 @@ export default function Acompanhamento() {
   });
 
   useEffect(() => { prepararMes(); }, [mes]);
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      prepararMes();
+    });
+  }, [mes]);
 
   async function prepararMes() {
     setCarregando(true); setErro("");
@@ -183,7 +190,9 @@ export default function Acompanhamento() {
         return pago + ativo + valorRecebido + inicio;
       };
 
-      for (const item of data || []) {
+      const dadosNormalizados = normalizarTransferenciasRecebimentos(data || []);
+
+      for (const item of dadosNormalizados) {
         const apartamentoId =
           item.contratos?.apartamento_id ||
           item.contratos?.apartamentos?.id ||

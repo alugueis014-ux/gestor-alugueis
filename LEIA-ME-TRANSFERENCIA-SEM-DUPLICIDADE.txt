@@ -1,0 +1,42 @@
+ALUGUE FÁCIL — TRANSFERÊNCIA SEM DUPLICIDADE
+
+PROBLEMA CORRIGIDO
+Após transferir um inquilino, ele podia aparecer no imóvel antigo e no novo
+em:
+- Acompanhamento;
+- Recebimentos;
+- Relatórios.
+
+CORREÇÃO GLOBAL
+A transferência agora é identificada por:
+- mesmo inquilino;
+- mesma empresa;
+- contrato antigo encerrado;
+- novo contrato iniciado exatamente na data de encerramento do antigo;
+- apartamentos diferentes.
+
+Isso NÃO impede o mesmo inquilino de possuir vários imóveis simultaneamente.
+
+COMPORTAMENTO
+- a cobrança do mês da transferência acompanha o NOVO contrato;
+- se o aluguel já estava pago no imóvel antigo, o pagamento é preservado;
+- se já existia uma cobrança pendente no destino, as duas são consolidadas;
+- a cobrança duplicada do contrato antigo é removida;
+- meses anteriores continuam no imóvel antigo normalmente;
+- meses futuros ficam no contrato novo.
+
+ARQUIVOS ALTERADOS
+- lib/sincronizacao.js
+- app/inquilinos/page.js
+- app/acompanhamento/page.js
+- app/recebimentos/page.js
+- app/relatorios/page.js
+- supabase/migrations/007_transferencia_recebimento_unico.sql
+
+ETAPA OBRIGATÓRIA
+Execute UMA VEZ no SQL Editor do Supabase:
+supabase/migrations/007_transferencia_recebimento_unico.sql
+
+Essa migration também corrige transferências duplicadas que já estão no banco.
+
+Depois faça Ctrl + F5 no localhost e confira as três telas.

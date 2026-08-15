@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
 
 const vazio = {
   nome: "",
@@ -30,6 +31,12 @@ export default function Predios() {
   useEffect(() => {
     carregar();
   }, [mostrarArquivados]);
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      carregar();
+    });
+  }, []);
 
   async function carregar() {
     setErro("");
@@ -439,6 +446,7 @@ export default function Predios() {
       if (error) throw error;
 
       await carregar();
+      notificarAtualizacao("imoveis");
     } catch (e) {
       setErro(e.message || "Não foi possível restaurar o imóvel.");
     }

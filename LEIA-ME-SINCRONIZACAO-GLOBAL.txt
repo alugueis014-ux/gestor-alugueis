@@ -1,0 +1,33 @@
+ALUGUE FÁCIL — SINCRONIZAÇÃO GLOBAL CONSOLIDADA
+
+Esta atualização é GLOBAL para todas as empresas e usuários.
+Cada empresa continua isolada por empresa_id.
+
+PRINCIPAIS CORREÇÕES
+- Dashboard, Imóveis, Apartamentos, Disponíveis, Inquilinos, Contratos,
+  Acompanhamento, Recebimentos, Controle Mensal e Relatórios atualizam ao receber
+  alterações relacionadas.
+- Atualiza também ao voltar para a aba/janela e entre abas abertas.
+- Alteração no valor do contrato atualiza cobranças abertas do mês atual em diante.
+- Encerramento cancela cobranças futuras abertas, preservando o mês do encerramento.
+- Encerrar um contrato não torna o inquilino inativo se ele tiver outro contrato ativo.
+- O mesmo inquilino pode ter vários imóveis simultaneamente.
+- Novo contrato normal gera a cobrança do mês atual sem exigir visita prévia a Recebimentos.
+- Transferência não gera segunda cobrança automática no mesmo mês.
+- Inclui as correções mais recentes de Dashboard, Acompanhamento, Controle Mensal,
+  Relatórios e cards interativos de Recebimentos.
+
+ETAPA NO SUPABASE
+Execute UMA VEZ:
+supabase/migrations/006_sincronizacao_global_dados.sql
+
+Não apaga dados existentes.
+
+TESTE NO LOCALHOST
+1. Altere o valor de um contrato e confira todas as telas financeiras.
+2. Registre e estorne um recebimento.
+3. Transfira um inquilino.
+4. Encerre um contrato de um inquilino que ainda possua outro imóvel.
+5. Confira Dashboard, Acompanhamento, Controle Mensal e Relatórios.
+
+Depois do teste, faça o git push.

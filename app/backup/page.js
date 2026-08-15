@@ -7,6 +7,7 @@ import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { obterEmpresaAtual, obterEmpresaId } from "../../lib/empresa";
+import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
 
 const TABELAS_EXPORTACAO = [
   "predios",
@@ -515,8 +516,9 @@ export default function Backup() {
       });
 
       setMensagem(
-        `Backup importado com sucesso em ${empresaNome}. Atualize as telas do sistema.`
+        `Backup importado com sucesso em ${empresaNome}. As telas serão atualizadas automaticamente.`
       );
+      notificarAtualizacao("backup-importado");
     } catch (e) {
       const msg = e.message || "Não foi possível importar o backup.";
       setErro(
@@ -564,7 +566,8 @@ export default function Backup() {
         }
       }
 
-      setMensagem("Todos os registros do sistema foram apagados.");
+      setMensagem("Todos os registros desta empresa foram apagados.");
+      notificarAtualizacao("backup-apagar-tudo");
     } catch (e) {
       setErro(e.message || "Não foi possível apagar os dados.");
     } finally {

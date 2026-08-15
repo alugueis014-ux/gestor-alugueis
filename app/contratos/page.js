@@ -6,6 +6,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
+import { garantirCobrancaMesAtual, sincronizarEncerramentoContrato, sincronizarValorContratoAberto } from "../../lib/sincronizacao";
 
 
 async function obterEmpresaId() {
@@ -46,6 +48,12 @@ export default function Contratos() {
   const [nomeEmpresa, setNomeEmpresa] = useState("LOCADOR");
 
   useEffect(() => { carregar(); }, []);
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      carregar();
+    });
+  }, []);
 
   async function carregar() {
     setCarregando(true);
@@ -216,26 +224,77 @@ As partes declaram que leram, compreenderam e concordam com todas as condições
   async function encerrar(c) {
     if (!confirm(`Encerrar o contrato de ${c.inquilinos?.nome || "inquilino"}?`)) return;
 
-    const hoje = new Date().toISOString().slice(0, 10);
+    setErro("");
 
-    const { error } = await supabase
-      .from("contratos")
-      .update({ status: "encerrado", data_fim: c.data_fim || hoje })
-      .eq("id", c.id);
+    try {
+      const empresaId = await obterEmpresaId();
+      const hoje = new Date().toISOString().slice(0, 10);
+      const dataFim = c.data_fim || hoje;
 
-    if (error) return setErro(error.message);
+      const { error } = await supabase
+        .from("contratos")
+        .update({ status: "encerrado", data_fim: dataFim })
+        .eq("id", c.id)
+        .eq("empresa_id", empresaId);
 
-    await supabase
-      .from("apartamentos")
-      .update({ situacao: "disponivel" })
-      .eq("id", c.apartamento_id);
+      if (error) throw error;
 
-    await supabase
-      .from("inquilinos")
-      .update({ status: "inativo", data_saida: hoje })
-      .eq("id", c.inquilino_id);
+      await sincronizarEncerramentoContrato({
+        empresaId,
+        contratoId: c.id,
+        dataFim
+      });
 
-    await carregar();
+      const { data: outroNoApartamento, error: aptCheckError } = await supabase
+        .from("contratos")
+        .select("id")
+        .eq("empresa_id", empresaId)
+        .eq("apartamento_id", c.apartamento_id)
+        .eq("status", "ativo")
+        .neq("id", c.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (aptCheckError) throw aptCheckError;
+
+      if (!outroNoApartamento) {
+        const { error: aptError } = await supabase
+          .from("apartamentos")
+          .update({ situacao: "disponivel" })
+          .eq("id", c.apartamento_id)
+          .eq("empresa_id", empresaId);
+
+        if (aptError) throw aptError;
+      }
+
+      const { data: outroContrato, error: outroError } = await supabase
+        .from("contratos")
+        .select("id")
+        .eq("empresa_id", empresaId)
+        .eq("inquilino_id", c.inquilino_id)
+        .eq("status", "ativo")
+        .neq("id", c.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (outroError) throw outroError;
+
+      const { error: inqError } = await supabase
+        .from("inquilinos")
+        .update({
+          status: outroContrato ? "ativo" : "inativo",
+          data_saida: outroContrato ? null : hoje
+        })
+        .eq("id", c.inquilino_id)
+        .eq("empresa_id", empresaId);
+
+      if (inqError) throw inqError;
+
+      await carregar();
+      notificarAtualizacao("contratos");
+    } catch (e) {
+      setErro(e.message || "Não foi possível encerrar o contrato.");
+    }
   }
 
   function selecionarArquivo(c) {

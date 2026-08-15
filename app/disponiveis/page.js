@@ -7,6 +7,7 @@ import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { obterEmpresaId } from "../../lib/empresa";
+import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
 
 const rotulos = {
   disponivel: "Disponível",
@@ -27,6 +28,12 @@ export default function Disponiveis() {
 
   useEffect(() => {
     carregar();
+  }, []);
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      carregar();
+    });
   }, []);
 
   async function carregar() {

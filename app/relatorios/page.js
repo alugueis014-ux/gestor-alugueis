@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { obterEmpresaId } from "../../lib/empresa";
+import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
 
 const meses = [
   ["01", "Jan"], ["02", "Fev"], ["03", "Mar"], ["04", "Abr"],
@@ -41,50 +43,151 @@ export default function Relatorios() {
 
   useEffect(() => {
     carregar();
+
+    const atualizarAoVoltar = () => {
+      if (document.visibilityState === "visible") carregar();
+    };
+
+    window.addEventListener("focus", carregar);
+    document.addEventListener("visibilitychange", atualizarAoVoltar);
+
+    return () => {
+      window.removeEventListener("focus", carregar);
+      document.removeEventListener("visibilitychange", atualizarAoVoltar);
+    };
+  }, [ano]);
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      carregar();
+    });
   }, [ano]);
 
   async function carregar() {
     setCarregando(true);
     setErro("");
 
-    const inicio = `${ano}-01-01`;
-    const fim = `${ano}-12-31`;
+    try {
+      const empresaId = await obterEmpresaId();
+      const inicio = `${ano}-01-01`;
+      const fim = `${ano}-12-31`;
 
-    const [rec, pre] = await Promise.all([
-      supabase
-        .from("recebimentos")
-        .select(`
-          id,
-          competencia,
-          valor_previsto,
-          valor_recebido,
-          status,
-          contratos(
-            apartamentos(
-              predio_id,
-              predios(id,nome)
+      const [rec, pre] = await Promise.all([
+        supabase
+          .from("recebimentos")
+          .select(`
+            id,
+            empresa_id,
+            contrato_id,
+            competencia,
+            valor_previsto,
+            valor_recebido,
+            multa,
+            juros,
+            desconto,
+            status,
+            contratos!inner(
+              id,
+              empresa_id,
+              inquilino_id,
+              apartamento_id,
+              status,
+              data_inicio,
+              data_fim,
+              inquilinos(id,nome),
+              apartamentos(
+                id,
+                predio_id,
+                predios(id,nome,endereco)
+              )
             )
-          )
-        `)
-        .gte("competencia", inicio)
-        .lte("competencia", fim),
-      supabase
-        .from("predios")
-        .select("id,nome,endereco")
-        .order("nome")
-    ]);
+          `)
+          .eq("empresa_id", empresaId)
+          .eq("contratos.empresa_id", empresaId)
+          .gte("competencia", inicio)
+          .lte("competencia", fim),
 
-    const falha = rec.error || pre.error;
-    if (falha) setErro(falha.message);
+        // Relatórios históricos também precisam conhecer imóveis arquivados.
+        supabase
+          .from("predios")
+          .select("id,nome,endereco,arquivado")
+          .eq("empresa_id", empresaId)
+          .order("nome")
+      ]);
 
-    setRecebimentos(rec.data || []);
-    setPredios(pre.data || []);
-    setCarregando(false);
+      const falha = rec.error || pre.error;
+      if (falha) throw falha;
+
+      /*
+        Fonte única do relatório:
+        para cada apartamento + competência deve existir apenas UMA cobrança
+        contabilizada, mesmo que registros antigos duplicados ainda estejam no banco.
+
+        Prioridade:
+        1. registro pago / totalmente recebido;
+        2. contrato ativo;
+        3. maior valor recebido;
+        4. contrato mais recente.
+      */
+      const mapa = new Map();
+
+      const pontuar = item => {
+        const previsto = numero(item.valor_previsto);
+        const recebido = numero(item.valor_recebido);
+        const status = String(item.status || "").toLowerCase();
+
+        const pago =
+          status === "pago" || (previsto > 0 && recebido >= previsto)
+            ? 1000000000
+            : 0;
+
+        const ativo =
+          String(item.contratos?.status || "").toLowerCase() === "ativo"
+            ? 100000000
+            : 0;
+
+        const valorRecebido = recebido * 1000;
+        const inicioContrato =
+          Number(String(item.contratos?.data_inicio || "").replace(/-/g, "")) || 0;
+
+        return pago + ativo + valorRecebido + inicioContrato;
+      };
+
+      const dadosNormalizados = normalizarTransferenciasRecebimentos(rec.data || []);
+
+      for (const item of dadosNormalizados) {
+        const apartamentoId =
+          item.contratos?.apartamento_id ||
+          item.contratos?.apartamentos?.id ||
+          item.id;
+
+        const chave = `${apartamentoId}|${item.competencia}`;
+        const atual = mapa.get(chave);
+
+        if (!atual || pontuar(item) > pontuar(atual)) {
+          mapa.set(chave, item);
+        }
+      }
+
+      setRecebimentos(Array.from(mapa.values()));
+      setPredios(pre.data || []);
+    } catch (e) {
+      setErro(e.message || "Não foi possível atualizar os relatórios.");
+      setRecebimentos([]);
+      setPredios([]);
+    } finally {
+      setCarregando(false);
+    }
   }
 
   const totais = useMemo(() => {
     const previsto = recebimentos.reduce(
-      (soma, r) => soma + numero(r.valor_previsto),
+      (soma, r) =>
+        soma +
+        numero(r.valor_previsto) +
+        numero(r.multa) +
+        numero(r.juros) -
+        numero(r.desconto),
       0
     );
     const recebido = recebimentos.reduce(
@@ -104,7 +207,12 @@ export default function Relatorios() {
       );
 
       const previsto = registros.reduce(
-        (soma, r) => soma + numero(r.valor_previsto),
+        (soma, r) =>
+          soma +
+          numero(r.valor_previsto) +
+          numero(r.multa) +
+          numero(r.juros) -
+          numero(r.desconto),
         0
       );
       const recebido = registros.reduce(
@@ -125,7 +233,12 @@ export default function Relatorios() {
       );
 
       const previsto = registros.reduce(
-        (soma, r) => soma + numero(r.valor_previsto),
+        (soma, r) =>
+          soma +
+          numero(r.valor_previsto) +
+          numero(r.multa) +
+          numero(r.juros) -
+          numero(r.desconto),
         0
       );
       const recebido = registros.reduce(

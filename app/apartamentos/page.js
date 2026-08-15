@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
+import { garantirCobrancaMesAtual, sincronizarEncerramentoContrato, sincronizarValorContratoAberto } from "../../lib/sincronizacao";
 
 export default function Apartamentos() {
   const [predios, setPredios] = useState([]);
@@ -41,6 +43,12 @@ export default function Apartamentos() {
   useEffect(() => {
     iniciar();
   }, []);
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      carregar();
+    });
+  }, [empresaId]);
 
   async function obterEmpresaId() {
     const { data: auth, error: authError } = await supabase.auth.getUser();
@@ -279,15 +287,12 @@ export default function Apartamentos() {
     }
   }
 
+  // O mesmo inquilino pode ter contratos ativos em imóveis diferentes.
   const inquilinosSemApartamento = useMemo(() => {
-    const ocupados = new Set(
-      contratosAtivos
-        .filter(c => c.inquilino_id)
-        .map(c => c.inquilino_id)
+    return [...inquilinos].sort((a, b) =>
+      String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")
     );
-
-    return inquilinos.filter(i => !ocupados.has(i.id));
-  }, [inquilinos, contratosAtivos]);
+  }, [inquilinos]);
 
   function abrirSelecionarInquilino(apartamento) {
     if (apartamento.situacao === "ocupado") {
@@ -383,6 +388,7 @@ export default function Apartamentos() {
 
       setModalInquilino(null);
       await carregar(idEmpresa);
+      notificarAtualizacao("apartamentos-contratos");
     } catch (e) {
       setErro(e.message || "Não foi possível vincular o inquilino.");
     } finally {

@@ -9,6 +9,7 @@ import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import Icon from "../../components/Icon";
 import { obterEmpresaId } from "../../lib/empresa";
+import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
 
 const dinheiro = valor => Number(valor || 0).toLocaleString("pt-BR", {
   style: "currency",
@@ -57,6 +58,12 @@ export default function Dashboard() {
   function valorPrivado(valor) {
     return ocultarInformacoes ? "••••••" : valor;
   }
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      carregar();
+    });
+  }, [mes]);
 
   async function carregar() {
     setErro("");
@@ -111,9 +118,11 @@ export default function Dashboard() {
             contratos!inner(
               id,
               empresa_id,
+              inquilino_id,
               apartamento_id,
               status,
               data_inicio,
+              data_fim,
               inquilinos(id,nome),
               apartamentos(
                 id,
@@ -131,10 +140,23 @@ export default function Dashboard() {
           .from("recebimentos")
           .select(`
             id,
+            empresa_id,
             competencia,
+            valor_previsto,
+            valor_recebido,
             status,
             data_vencimento,
-            contratos!inner(id,empresa_id,apartamento_id)
+            contratos!inner(
+              id,
+              empresa_id,
+              inquilino_id,
+              apartamento_id,
+              status,
+              data_inicio,
+              data_fim,
+              inquilinos(id,nome),
+              apartamentos(id,numero,predio_id,predios(id,nome,endereco))
+            )
           `)
           .eq("empresa_id", empresaId)
           .eq("contratos.empresa_id", empresaId)
@@ -192,10 +214,21 @@ export default function Dashboard() {
         return Array.from(mapa.values());
       };
 
-      const recebimentosUnicos = deduplicarRecebimentos(r.data || []);
+      // Primeiro remove a duplicidade causada por TRANSFERÊNCIA:
+      // contrato encerrado + novo contrato do mesmo inquilino na mesma data.
+      // Depois aplica a deduplicação normal por apartamento + competência.
+      const recebimentosTransferenciaNormalizados =
+        normalizarTransferenciasRecebimentos(r.data || []);
+
+      const recebimentosUnicos = deduplicarRecebimentos(
+        recebimentosTransferenciaNormalizados
+      );
+
+      const atrasosTransferenciaNormalizados =
+        normalizarTransferenciasRecebimentos(atraso.data || []);
 
       const atrasadosUnicos = Array.from(
-        (atraso.data || []).reduce((mapa, item) => {
+        atrasosTransferenciaNormalizados.reduce((mapa, item) => {
           const apartamentoId = item.contratos?.apartamento_id || item.id;
           const chave = `${apartamentoId}|${item.competencia || item.data_vencimento || ""}`;
           if (!mapa.has(chave)) mapa.set(chave, item);

@@ -7,6 +7,7 @@ import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { obterEmpresaId } from "../../lib/empresa";
+import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
 
 
 function moeda(valor) {
@@ -214,6 +215,12 @@ export default function Recebimentos() {
     }
   }, [mes]);
 
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      prepararMes();
+    });
+  }, [mes]);
+
   async function prepararMes() {
     setCarregando(true);
     setErro("");
@@ -311,6 +318,11 @@ export default function Recebimentos() {
           contratos!inner(
             id,
             empresa_id,
+            inquilino_id,
+            apartamento_id,
+            status,
+            data_inicio,
+            data_fim,
             inquilinos(id,nome,cpf,telefone),
             apartamentos(id,numero,predios(id,nome,endereco))
           )
@@ -329,7 +341,9 @@ export default function Recebimentos() {
       // 3) em empate, prioriza contrato com início mais recente.
       const mapa = new Map();
 
-      for (const r of data || []) {
+      const dadosNormalizados = normalizarTransferenciasRecebimentos(data || []);
+
+      for (const r of dadosNormalizados) {
         const apartamentoId =
           r.contratos?.apartamentos?.id ||
           r.contratos?.apartamento_id ||

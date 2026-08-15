@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
 import { obterEmpresaId } from "../../lib/empresa";
 
 function moeda(valor) {
@@ -35,6 +36,12 @@ export default function ControleMensal() {
 
   useEffect(() => {
     carregar();
+  }, [mes]);
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      carregar();
+    });
   }, [mes]);
 
   async function carregar() {

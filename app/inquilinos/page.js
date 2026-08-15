@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
+import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
+import { garantirCobrancaMesAtual, migrarRecebimentoTransferencia, sincronizarEncerramentoContrato, sincronizarValorContratoAberto } from "../../lib/sincronizacao";
 
 const formularioVazio = {
   nome: "",
@@ -48,6 +50,12 @@ export default function Inquilinos() {
   });
 
   useEffect(() => { iniciar(); }, []);
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      carregarTudo();
+    });
+  }, [empresaId]);
 
   async function obterEmpresaId() {
     const { data: auth, error: authError } = await supabase.auth.getUser();
@@ -270,6 +278,12 @@ export default function Inquilinos() {
 
       if (encerrarError) throw encerrarError;
 
+      await sincronizarEncerramentoContrato({
+        empresaId: idEmpresa,
+        contratoId: contrato.id,
+        dataFim: formTransferencia.data_transferencia
+      });
+
       // Libera o apartamento anterior.
       const { error: liberarError } = await supabase
         .from("apartamentos")
@@ -280,7 +294,7 @@ export default function Inquilinos() {
       if (liberarError) throw liberarError;
 
       // Cria um novo contrato no apartamento de destino.
-      const { error: novoContratoError } = await supabase
+      const { data: novoContrato, error: novoContratoError } = await supabase
         .from("contratos")
         .insert({
           empresa_id: idEmpresa,
@@ -292,9 +306,18 @@ export default function Inquilinos() {
           data_inicio: formTransferencia.data_transferencia,
           data_fim: null,
           status: "ativo"
-        });
+        })
+        .select("id")
+        .single();
 
       if (novoContratoError) throw novoContratoError;
+
+      await migrarRecebimentoTransferencia({
+        empresaId: idEmpresa,
+        contratoOrigemId: contrato.id,
+        contratoDestinoId: novoContrato.id,
+        dataTransferencia: formTransferencia.data_transferencia
+      });
 
       // Ocupa o novo apartamento e mantém o inquilino ativo.
       const { error: ocuparError } = await supabase
@@ -315,6 +338,7 @@ export default function Inquilinos() {
 
       setModalTransferencia(null);
       await carregarTudo(idEmpresa);
+      notificarAtualizacao("transferencia-inquilino", { inquilinoId: inquilino.id });
     } catch (err) {
       setErro(err.message || "Não foi possível transferir o inquilino.");
     } finally {
@@ -473,15 +497,11 @@ export default function Inquilinos() {
             hoje.getMonth() + 1
           ).padStart(2, "0")}-01`;
 
-          const { error: recebimentosError } = await supabase
-            .from("recebimentos")
-            .update({ valor_previsto: Number(form.valor_aluguel) })
-            .eq("contrato_id", contratoEditandoId)
-            .gte("competencia", competenciaAtual)
-            .neq("status", "pago")
-            .neq("status", "cancelado");
-
-          if (recebimentosError) throw recebimentosError;
+          await sincronizarValorContratoAberto({
+            empresaId: idEmpresa,
+            contratoId: contratoEditandoId,
+            valorAluguel: Number(form.valor_aluguel)
+          });
         } else {
           const { data, error } = await supabase
             .from("contratos")
@@ -491,6 +511,11 @@ export default function Inquilinos() {
 
           if (error) throw error;
           contratoId = data.id;
+
+          await garantirCobrancaMesAtual({
+            empresaId: idEmpresa,
+            contratoId
+          });
         }
 
         if (

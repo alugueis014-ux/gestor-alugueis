@@ -37,6 +37,10 @@ const ORDEM_EXCLUSAO = [
   "predios"
 ];
 
+const DESTINO_EMAIL = "alaelsonvereador@hotmail.com.br";
+const DESTINO_EMPRESA_ID = "3bf9034a-8319-42cf-b50f-6e7d595ceb04";
+const DESTINO_EMPRESA_NOME = "GESTÃO DE ALUGUEL";
+
 
 async function obterEscopoDados() {
   const { data: auth, error: authError } = await supabase.auth.getUser();
@@ -126,14 +130,37 @@ async function buscarTabelaNoEscopo(tabela, escopo) {
   throw new Error(`Erro ao ler ${tabela}: ${consulta.error.message}`);
 }
 
-async function obterEmpresaId() {
+async function obterContextoImportacao() {
   const escopo = await obterEscopoDados();
-  if (escopo.modo !== "multiempresa") {
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !auth?.user) {
+    throw new Error("Sessão inválida. Entre novamente no sistema.");
+  }
+
+  if ((auth.user.email || "").toLowerCase() !== DESTINO_EMAIL.toLowerCase()) {
     throw new Error(
-      "A importação nesta versão deve ser feita no banco multiempresa. Use apenas 'Baixar backup' neste banco antigo."
+      `Para restaurar este backup na ${DESTINO_EMPRESA_NOME}, entre com ${DESTINO_EMAIL}.`
     );
   }
-  return escopo.id;
+
+  if (escopo.modo !== "multiempresa") {
+    throw new Error(
+      "A importação nesta versão deve ser feita no banco multiempresa."
+    );
+  }
+
+  if (escopo.id !== DESTINO_EMPRESA_ID) {
+    throw new Error(
+      `A conta ${DESTINO_EMAIL} não está vinculada à empresa ${DESTINO_EMPRESA_NOME}.`
+    );
+  }
+
+  return {
+    empresaId: DESTINO_EMPRESA_ID,
+    userId: auth.user.id,
+    email: auth.user.email
+  };
 }
 
 
@@ -215,6 +242,182 @@ async function upsertCompativel(tabela, registros) {
   }
 
   throw new Error(`Muitas incompatibilidades de colunas ao importar ${tabela}.`);
+}
+
+
+function novoId() {
+  return crypto.randomUUID();
+}
+
+function criarMapaIds(registros) {
+  const mapa = new Map();
+
+  for (const item of Array.isArray(registros) ? registros : []) {
+    if (item?.id) mapa.set(item.id, novoId());
+  }
+
+  return mapa;
+}
+
+function remap(mapa, valor) {
+  if (!valor) return valor;
+  return mapa.get(valor) || valor;
+}
+
+function prepararBackupComNovosIds(dados, empresaId, userId) {
+  const predios = Array.isArray(dados?.predios) ? dados.predios : [];
+  const apartamentos = Array.isArray(dados?.apartamentos) ? dados.apartamentos : [];
+  const inquilinos = Array.isArray(dados?.inquilinos) ? dados.inquilinos : [];
+  const contratos = Array.isArray(dados?.contratos) ? dados.contratos : [];
+  const recebimentos = Array.isArray(dados?.recebimentos) ? dados.recebimentos : [];
+  const anexos = Array.isArray(dados?.anexos) ? dados.anexos : [];
+  const historico = Array.isArray(dados?.historico) ? dados.historico : [];
+
+  // IDs novos evitam colisões com registros pertencentes a outras empresas.
+  const ids = {
+    predios: criarMapaIds(predios),
+    apartamentos: criarMapaIds(apartamentos),
+    inquilinos: criarMapaIds(inquilinos),
+    contratos: criarMapaIds(contratos),
+    recebimentos: criarMapaIds(recebimentos),
+    anexos: criarMapaIds(anexos),
+    historico: criarMapaIds(historico)
+  };
+
+  const predioPorApartamentoAntigo = new Map(
+    apartamentos
+      .filter(ap => ap?.id && ap?.predio_id)
+      .map(ap => [ap.id, ap.predio_id])
+  );
+
+  return {
+    predios: predios.map(item => ({
+      ...item,
+      id: remap(ids.predios, item.id),
+      empresa_id: empresaId,
+      proprietario_id: userId
+    })),
+
+    apartamentos: apartamentos.map(item => ({
+      ...item,
+      id: remap(ids.apartamentos, item.id),
+      predio_id: remap(ids.predios, item.predio_id),
+      empresa_id: empresaId,
+      proprietario_id: userId
+    })),
+
+    inquilinos: inquilinos.map(item => {
+      const copia = {
+        ...item,
+        id: remap(ids.inquilinos, item.id),
+        empresa_id: empresaId,
+        proprietario_id: userId
+      };
+
+      // Compatibilidade caso algum backup possua vínculos extras.
+      if (copia.predio_id) copia.predio_id = remap(ids.predios, copia.predio_id);
+      if (copia.apartamento_id) copia.apartamento_id = remap(ids.apartamentos, copia.apartamento_id);
+
+      return copia;
+    }),
+
+    contratos: contratos.map(item => {
+      const predioAntigo =
+        item.predio_id ||
+        predioPorApartamentoAntigo.get(item.apartamento_id) ||
+        null;
+
+      return {
+        ...item,
+        id: remap(ids.contratos, item.id),
+        inquilino_id: remap(ids.inquilinos, item.inquilino_id),
+        apartamento_id: remap(ids.apartamentos, item.apartamento_id),
+        predio_id: predioAntigo ? remap(ids.predios, predioAntigo) : predioAntigo,
+        empresa_id: empresaId,
+        proprietario_id: userId
+      };
+    }),
+
+    recebimentos: recebimentos.map(item => ({
+      ...item,
+      id: remap(ids.recebimentos, item.id),
+      contrato_id: remap(ids.contratos, item.contrato_id),
+      inquilino_id: remap(ids.inquilinos, item.inquilino_id),
+      apartamento_id: remap(ids.apartamentos, item.apartamento_id),
+      predio_id: remap(ids.predios, item.predio_id),
+      empresa_id: empresaId,
+      proprietario_id: userId
+    })),
+
+    anexos: anexos.map(item => ({
+      ...item,
+      id: remap(ids.anexos, item.id),
+      contrato_id: remap(ids.contratos, item.contrato_id),
+      inquilino_id: remap(ids.inquilinos, item.inquilino_id),
+      apartamento_id: remap(ids.apartamentos, item.apartamento_id),
+      predio_id: remap(ids.predios, item.predio_id),
+      empresa_id: empresaId,
+      proprietario_id: userId
+    })),
+
+    historico: historico.map(item => ({
+      ...item,
+      id: remap(ids.historico, item.id),
+      predio_id: remap(ids.predios, item.predio_id),
+      apartamento_id: remap(ids.apartamentos, item.apartamento_id),
+      inquilino_id: remap(ids.inquilinos, item.inquilino_id),
+      contrato_id: remap(ids.contratos, item.contrato_id),
+      recebimento_id: remap(ids.recebimentos, item.recebimento_id),
+      anexo_id: remap(ids.anexos, item.anexo_id),
+      empresa_id: empresaId,
+      proprietario_id: userId
+    }))
+  };
+}
+
+async function importarDadosNoEscopo(dados, empresaId, userId, { remapearIds = true } = {}) {
+  const dadosPreparados = remapearIds
+    ? prepararBackupComNovosIds(dados, empresaId, userId)
+    : dados;
+
+  for (const tabela of ORDEM_IMPORTACAO) {
+    const registrosOriginais = dadosPreparados?.[tabela];
+
+    if (!Array.isArray(registrosOriginais) || registrosOriginais.length === 0) {
+      continue;
+    }
+
+    let registros = registrosOriginais.map(item => ({
+      ...item,
+      empresa_id: empresaId,
+      proprietario_id: userId
+    }));
+
+    try {
+      await upsertCompativel(tabela, registros);
+    } catch (error) {
+      throw new Error(`Erro ao importar ${tabela}: ${error.message}`);
+    }
+  }
+}
+
+async function capturarDadosAtuais(empresaId) {
+  const dados = {};
+
+  for (const tabela of TABELAS_EXPORTACAO) {
+    const { data, error } = await supabase
+      .from(tabela)
+      .select("*")
+      .eq("empresa_id", empresaId);
+
+    if (error) {
+      throw new Error(`Erro ao preparar cópia de segurança de ${tabela}: ${error.message}`);
+    }
+
+    dados[tabela] = data || [];
+  }
+
+  return dados;
 }
 
 export default function Backup() {
@@ -309,8 +512,8 @@ export default function Backup() {
     if (!arquivo) return;
 
     if (!confirm(
-      "Restaurar este backup? Os dados atuais desta empresa serão apagados " +
-      "e substituídos pelos dados do arquivo selecionado."
+      `Restaurar este backup em ${DESTINO_EMPRESA_NOME} (${DESTINO_EMAIL})? ` +
+      "Os dados atuais desta empresa serão apagados e substituídos pelos dados do arquivo selecionado."
     )) return;
 
     setProcessando(true);
@@ -325,78 +528,43 @@ export default function Backup() {
         throw new Error("Arquivo de backup inválido.");
       }
 
-      const empresaId = await obterEmpresaId();
+      const { empresaId, userId } = await obterContextoImportacao();
 
-      // A restauração deve reproduzir exatamente o estado do backup.
-      // Por isso, remove primeiro os dados atuais da empresa.
-      await limparDadosDaEmpresa(empresaId);
+      // Antes de apagar qualquer coisa, guarda em memória uma cópia completa
+      // dos dados atuais da empresa. Se a importação falhar no meio,
+      // o sistema tenta restaurar automaticamente essa cópia.
+      const dadosAntesDaImportacao = await capturarDadosAtuais(empresaId);
+      let dadosAtuaisForamApagados = false;
 
-      for (const tabela of ORDEM_IMPORTACAO) {
-        const registrosOriginais = backup.dados[tabela];
-        if (!Array.isArray(registrosOriginais) || registrosOriginais.length === 0) {
-          continue;
-        }
+      try {
+        // A restauração deve reproduzir exatamente o estado do backup.
+        await limparDadosDaEmpresa(empresaId);
+        dadosAtuaisForamApagados = true;
 
-        let registros = registrosOriginais.map(item => ({
-          ...item,
-          empresa_id: empresaId
-        }));
-
-        // Backups antigos não possuíam predio_id em contratos.
-        // Recupera automaticamente o prédio através do apartamento.
-        if (tabela === "contratos") {
-          const apartamentosBackup = Array.isArray(backup.dados.apartamentos)
-            ? backup.dados.apartamentos
-            : [];
-
-          const predioPorApartamento = new Map(
-            apartamentosBackup
-              .filter(ap => ap?.id && ap?.predio_id)
-              .map(ap => [ap.id, ap.predio_id])
-          );
-
-          const idsPendentes = [...new Set(
-            registros
-              .filter(item => !item.predio_id && item.apartamento_id)
-              .map(item => item.apartamento_id)
-              .filter(id => !predioPorApartamento.has(id))
-          )];
-
-          if (idsPendentes.length) {
-            const { data: apartamentosBanco, error: apartamentosError } = await supabase
-              .from("apartamentos")
-              .select("id,predio_id")
-              .eq("empresa_id", empresaId)
-              .in("id", idsPendentes);
-
-            if (apartamentosError) throw apartamentosError;
-
-            (apartamentosBanco || []).forEach(ap => {
-              if (ap?.id && ap?.predio_id) {
-                predioPorApartamento.set(ap.id, ap.predio_id);
-              }
-            });
+        await importarDadosNoEscopo(
+          backup.dados,
+          empresaId,
+          userId,
+          { remapearIds: true }
+        );
+      } catch (importError) {
+        if (dadosAtuaisForamApagados) {
+          try {
+            await limparDadosDaEmpresa(empresaId);
+            await importarDadosNoEscopo(
+              dadosAntesDaImportacao,
+              empresaId,
+              userId,
+              { remapearIds: false }
+            );
+          } catch (rollbackError) {
+            throw new Error(
+              `${importError.message} | ATENÇÃO: também não foi possível restaurar automaticamente os dados anteriores: ${rollbackError.message}`
+            );
           }
-
-          registros = registros.map(item => {
-            if (item.predio_id || !item.apartamento_id) return item;
-
-            const predioId = predioPorApartamento.get(item.apartamento_id);
-            if (!predioId) {
-              throw new Error(
-                `Não foi possível identificar o prédio do contrato ${item.id || ""}.`
-              );
-            }
-
-            return { ...item, predio_id: predioId };
-          });
         }
 
-        try {
-          await upsertCompativel(tabela, registros);
-        } catch (error) {
-          throw new Error(`Erro ao importar ${tabela}: ${error.message}`);
-        }
+        throw importError;
       }
 
       salvarHistorico({
@@ -407,9 +575,16 @@ export default function Backup() {
         nome: arquivo.name
       });
 
-      setMensagem("Backup importado com sucesso. Atualize as telas do sistema.");
+      setMensagem(
+        `Backup importado com sucesso em ${DESTINO_EMPRESA_NOME}. Atualize as telas do sistema.`
+      );
     } catch (e) {
-      setErro(e.message || "Não foi possível importar o backup.");
+      const msg = e.message || "Não foi possível importar o backup.";
+      setErro(
+        /row-level security|rls/i.test(msg)
+          ? `${msg} — A restauração foi interrompida por uma política de segurança do Supabase. Os dados anteriores foram preservados/restaurados automaticamente quando possível.`
+          : msg
+      );
     } finally {
       setProcessando(false);
     }
@@ -435,7 +610,7 @@ export default function Backup() {
     setErro("");
 
     try {
-      const empresaId = await obterEmpresaId();
+      const { empresaId } = await obterContextoImportacao();
 
       for (const tabela of ORDEM_EXCLUSAO) {
         const { error } = await supabase

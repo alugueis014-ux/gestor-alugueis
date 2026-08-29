@@ -39,6 +39,8 @@ export default function Configuracoes() {
   const [whatsapp, setWhatsapp] = useState(null);
   const [carregandoWhatsapp, setCarregandoWhatsapp] = useState(false);
   const [conectandoWhatsapp, setConectandoWhatsapp] = useState(false);
+  const [telefoneTesteWhatsapp, setTelefoneTesteWhatsapp] = useState("");
+  const [enviandoTesteWhatsapp, setEnviandoTesteWhatsapp] = useState(false);
   const [metaSessao, setMetaSessao] = useState({ wabaId: "", phoneNumberId: "" });
   const [abaAtiva, setAbaAtiva] = useState("empresa");
 
@@ -220,6 +222,36 @@ export default function Configuracoes() {
       }
     } finally {
       setCarregandoWhatsapp(false);
+    }
+  }
+
+  async function enviarMensagemTesteWhatsapp() {
+    setErro("");
+    setMensagem("");
+    const telefone = somenteDigitos(telefoneTesteWhatsapp);
+    if (!telefone) {
+      setErro("Informe o número do WhatsApp que receberá a mensagem de teste.");
+      return;
+    }
+
+    setEnviandoTesteWhatsapp(true);
+    try {
+      const { data: sessao } = await supabase.auth.getSession();
+      const token = sessao?.session?.access_token;
+      if (!token) throw new Error("Sessão inválida. Entre novamente no sistema.");
+
+      const resposta = await fetch("/api/whatsapp/teste", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ telefone })
+      });
+      const json = await resposta.json().catch(() => ({}));
+      if (!resposta.ok || !json?.ok) throw new Error(json?.erro || "Não foi possível enviar a mensagem de teste.");
+      setMensagem("Mensagem de teste enviada pelo AlugueFácil. Confira o WhatsApp destinatário.");
+    } catch (e) {
+      setErro(e.message || "Não foi possível enviar a mensagem de teste.");
+    } finally {
+      setEnviandoTesteWhatsapp(false);
     }
   }
 
@@ -569,6 +601,28 @@ export default function Configuracoes() {
                       </div>
                     )}
                   </div>
+
+                  {process.env.NEXT_PUBLIC_WHATSAPP_PERMITIR_TESTE === "true" && (
+                    <div className="review-test-box">
+                      <div>
+                        <div className="status-label offline"><span className="status-dot" /> TESTE PARA ANÁLISE DA META</div>
+                        <h4>Enviar mensagem de teste</h4>
+                        <p>Use este recurso durante a gravação da análise do app. Informe um número autorizado a receber mensagens e envie diretamente pelo AlugueFácil.</p>
+                      </div>
+                      <div className="review-test-actions">
+                        <input
+                          value={telefoneTesteWhatsapp}
+                          onChange={e => setTelefoneTesteWhatsapp(mascararTelefone(e.target.value))}
+                          placeholder="(00) 00000-0000"
+                          inputMode="tel"
+                          aria-label="WhatsApp destinatário do teste"
+                        />
+                        <button type="button" className="primary" onClick={enviarMensagemTesteWhatsapp} disabled={enviandoTesteWhatsapp}>
+                          {enviandoTesteWhatsapp ? "Enviando..." : "Enviar mensagem de teste"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 )}
 
                 {abaAtiva === "seguranca" && (
@@ -592,8 +646,8 @@ export default function Configuracoes() {
         </div>
 
         <style jsx>{`
-          .settings-page{display:grid;gap:20px}.settings-heading{border-left:4px solid var(--ga-primary);padding:2px 0 2px 14px}.settings-kicker,.content-head>span{display:block;color:var(--ga-primary);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}.settings-heading h2{margin:3px 0 2px;font-size:29px;line-height:1.15;color:var(--ga-text)}.settings-heading p,.content-head p{margin:4px 0 0;color:var(--ga-text-soft);font-size:13px}.settings-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:16px;align-items:start}.settings-nav,.settings-content{background:#fff;border:1px solid var(--ga-border);border-radius:14px;box-shadow:var(--ga-shadow)}.settings-nav{padding:8px;display:grid;gap:5px}.settings-nav button{width:100%;border:0!important;background:transparent!important;color:var(--ga-text)!important;display:flex!important;align-items:center!important;gap:10px!important;text-align:left;padding:10px 11px!important;min-height:46px!important;box-shadow:none!important}.settings-nav button:hover{background:var(--ga-primary-soft)!important}.settings-nav button.active{background:var(--ga-primary)!important;color:#fff!important}.settings-nav-icon{width:27px;height:27px;display:grid;place-items:center;border-radius:7px;background:rgba(25,118,210,.08)}.settings-nav button.active .settings-nav-icon{background:rgba(255,255,255,.16)}.settings-nav-status{margin-left:auto;width:8px;height:8px;border-radius:50%;background:#94a3b8}.settings-nav-status.online{background:#22c55e}.settings-nav-divider{height:1px;background:var(--ga-border);margin:5px 3px}.settings-content{min-height:430px;padding:20px}.content-head{padding-bottom:17px;border-bottom:1px solid var(--ga-border)}.content-head h3{margin:5px 0 0;font-size:22px;color:var(--ga-text)}.content-box{margin-top:18px;padding:17px;border:1px solid var(--ga-border);border-radius:12px;background:#fff}.settings-form{display:grid;gap:15px}.settings-form.two-cols{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.settings-form label{display:grid;gap:7px}.content-actions{display:flex;justify-content:flex-end;padding-top:18px}.content-actions.left{justify-content:flex-start}.settings-save{min-width:155px}.settings-password{position:relative}.settings-password input{padding-right:48px!important}.settings-eye{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:34px!important;min-width:34px!important;min-height:34px!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;display:grid!important;place-items:center!important}.settings-eye:hover{background:#eef4f9!important}.password-box{max-width:700px}.connection-card{margin-top:18px;border:1px solid var(--ga-border);border-radius:13px;padding:18px;display:flex;align-items:center;gap:15px;background:var(--ga-surface-soft)}.connection-card.connected{border-color:#b9e5ca;background:#f5fcf8}.connection-main{display:flex;align-items:center;gap:14px;flex:1}.connection-logo{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;background:#e9f8ef;color:#137333}.connection-card h4,.automation-box h4{margin:4px 0 2px;font-size:16px;color:var(--ga-text)}.connection-card p,.automation-box p{margin:0;color:var(--ga-text-soft);font-size:13px}.status-label{display:flex;align-items:center;gap:7px;color:#18794e;font-size:10px;font-weight:850;letter-spacing:.08em}.status-label.offline{color:#64748b}.status-dot{width:8px;height:8px;border-radius:50%;background:#22c55e}.status-label.offline .status-dot{background:#94a3b8}.account-chip{padding:8px 11px;border:1px solid #cfe9d8;background:#fff;border-radius:8px;color:#475569;font-size:12px}.automation-box{margin-top:14px;border:1px solid var(--ga-border);border-radius:13px;padding:17px}.automation-head{padding-bottom:13px;border-bottom:1px solid var(--ga-border)}.automation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:13px}.automation-grid>div{display:flex;gap:10px;align-items:flex-start;padding:12px;background:var(--ga-surface-soft);border-radius:9px}.automation-grid b{color:#16a34a}.automation-grid span{display:grid;gap:2px}.automation-grid strong{font-size:13px;color:var(--ga-text)}.automation-grid small{font-size:12px;color:var(--ga-text-soft)}.connection-card.empty{align-items:flex-start}.empty-copy{flex:1}.connect-actions{display:flex;gap:8px;align-self:center}.whatsapp-disconnect{background:#dc2626!important;color:#fff!important;border-color:#dc2626!important}.settings-success{color:#166534;background:#ecfdf3;border:1px solid #b7e4c7;border-radius:8px;padding:11px 12px;font-size:14px}.settings-message{margin:0}.settings-loading,.whatsapp-loading{color:#64748b}.company-section{margin-top:20px}.section-title{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:9px}.section-title h4{margin:0;color:var(--ga-text);font-size:15px}.section-title p{margin:0;color:var(--ga-text-soft);font-size:12px}.content-box.no-top{margin-top:0}.address-grid{grid-template-columns:180px minmax(260px,2fr) 130px minmax(190px,1fr);gap:16px}.address-grid .street-field{grid-column:span 2}.full-field{grid-column:1/-1}
-          @media(max-width:900px){.settings-layout{grid-template-columns:1fr}.settings-nav{grid-template-columns:1fr 1fr 1fr}.settings-nav-divider{display:none}.settings-nav button{justify-content:center!important}.settings-nav-status{display:none}.settings-content{min-height:0}.settings-form.two-cols,.automation-grid,.address-grid{grid-template-columns:1fr}.address-grid .street-field,.full-field{grid-column:auto}.section-title{align-items:flex-start;flex-direction:column;gap:3px}.connection-card{flex-direction:column;align-items:stretch}.connect-actions{align-self:stretch;flex-direction:column}.content-actions .settings-save{width:100%}}
+          .settings-page{display:grid;gap:20px}.settings-heading{border-left:4px solid var(--ga-primary);padding:2px 0 2px 14px}.settings-kicker,.content-head>span{display:block;color:var(--ga-primary);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}.settings-heading h2{margin:3px 0 2px;font-size:29px;line-height:1.15;color:var(--ga-text)}.settings-heading p,.content-head p{margin:4px 0 0;color:var(--ga-text-soft);font-size:13px}.settings-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:16px;align-items:start}.settings-nav,.settings-content{background:#fff;border:1px solid var(--ga-border);border-radius:14px;box-shadow:var(--ga-shadow)}.settings-nav{padding:8px;display:grid;gap:5px}.settings-nav button{width:100%;border:0!important;background:transparent!important;color:var(--ga-text)!important;display:flex!important;align-items:center!important;gap:10px!important;text-align:left;padding:10px 11px!important;min-height:46px!important;box-shadow:none!important}.settings-nav button:hover{background:var(--ga-primary-soft)!important}.settings-nav button.active{background:var(--ga-primary)!important;color:#fff!important}.settings-nav-icon{width:27px;height:27px;display:grid;place-items:center;border-radius:7px;background:rgba(25,118,210,.08)}.settings-nav button.active .settings-nav-icon{background:rgba(255,255,255,.16)}.settings-nav-status{margin-left:auto;width:8px;height:8px;border-radius:50%;background:#94a3b8}.settings-nav-status.online{background:#22c55e}.settings-nav-divider{height:1px;background:var(--ga-border);margin:5px 3px}.settings-content{min-height:430px;padding:20px}.content-head{padding-bottom:17px;border-bottom:1px solid var(--ga-border)}.content-head h3{margin:5px 0 0;font-size:22px;color:var(--ga-text)}.content-box{margin-top:18px;padding:17px;border:1px solid var(--ga-border);border-radius:12px;background:#fff}.settings-form{display:grid;gap:15px}.settings-form.two-cols{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.settings-form label{display:grid;gap:7px}.content-actions{display:flex;justify-content:flex-end;padding-top:18px}.content-actions.left{justify-content:flex-start}.settings-save{min-width:155px}.settings-password{position:relative}.settings-password input{padding-right:48px!important}.settings-eye{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:34px!important;min-width:34px!important;min-height:34px!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;display:grid!important;place-items:center!important}.settings-eye:hover{background:#eef4f9!important}.password-box{max-width:700px}.connection-card{margin-top:18px;border:1px solid var(--ga-border);border-radius:13px;padding:18px;display:flex;align-items:center;gap:15px;background:var(--ga-surface-soft)}.connection-card.connected{border-color:#b9e5ca;background:#f5fcf8}.connection-main{display:flex;align-items:center;gap:14px;flex:1}.connection-logo{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;background:#e9f8ef;color:#137333}.connection-card h4,.automation-box h4{margin:4px 0 2px;font-size:16px;color:var(--ga-text)}.connection-card p,.automation-box p{margin:0;color:var(--ga-text-soft);font-size:13px}.status-label{display:flex;align-items:center;gap:7px;color:#18794e;font-size:10px;font-weight:850;letter-spacing:.08em}.status-label.offline{color:#64748b}.status-dot{width:8px;height:8px;border-radius:50%;background:#22c55e}.status-label.offline .status-dot{background:#94a3b8}.account-chip{padding:8px 11px;border:1px solid #cfe9d8;background:#fff;border-radius:8px;color:#475569;font-size:12px}.automation-box{margin-top:14px;border:1px solid var(--ga-border);border-radius:13px;padding:17px}.automation-head{padding-bottom:13px;border-bottom:1px solid var(--ga-border)}.automation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:13px}.automation-grid>div{display:flex;gap:10px;align-items:flex-start;padding:12px;background:var(--ga-surface-soft);border-radius:9px}.automation-grid b{color:#16a34a}.automation-grid span{display:grid;gap:2px}.automation-grid strong{font-size:13px;color:var(--ga-text)}.automation-grid small{font-size:12px;color:var(--ga-text-soft)}.connection-card.empty{align-items:flex-start}.empty-copy{flex:1}.connect-actions{display:flex;gap:8px;align-self:center}.whatsapp-disconnect{background:#dc2626!important;color:#fff!important;border-color:#dc2626!important}.review-test-box{margin-top:14px;border:1px dashed #93c5fd;border-radius:13px;padding:17px;background:#f8fbff;display:grid;gap:14px}.review-test-box h4{margin:5px 0 3px;font-size:16px;color:var(--ga-text)}.review-test-box p{margin:0;color:var(--ga-text-soft);font-size:13px}.review-test-actions{display:grid;grid-template-columns:minmax(220px,320px) auto;gap:10px;align-items:center}.review-test-actions input{width:100%}.settings-success{color:#166534;background:#ecfdf3;border:1px solid #b7e4c7;border-radius:8px;padding:11px 12px;font-size:14px}.settings-message{margin:0}.settings-loading,.whatsapp-loading{color:#64748b}.company-section{margin-top:20px}.section-title{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:9px}.section-title h4{margin:0;color:var(--ga-text);font-size:15px}.section-title p{margin:0;color:var(--ga-text-soft);font-size:12px}.content-box.no-top{margin-top:0}.address-grid{grid-template-columns:180px minmax(260px,2fr) 130px minmax(190px,1fr);gap:16px}.address-grid .street-field{grid-column:span 2}.full-field{grid-column:1/-1}
+          @media(max-width:900px){.review-test-actions{grid-template-columns:1fr}.settings-layout{grid-template-columns:1fr}.settings-nav{grid-template-columns:1fr 1fr 1fr}.settings-nav-divider{display:none}.settings-nav button{justify-content:center!important}.settings-nav-status{display:none}.settings-content{min-height:0}.settings-form.two-cols,.automation-grid,.address-grid{grid-template-columns:1fr}.address-grid .street-field,.full-field{grid-column:auto}.section-title{align-items:flex-start;flex-direction:column;gap:3px}.connection-card{flex-direction:column;align-items:stretch}.connect-actions{align-self:stretch;flex-direction:column}.content-actions .settings-save{width:100%}}
           @media(max-width:620px){.settings-nav{grid-template-columns:1fr}.settings-nav button{justify-content:flex-start!important}.settings-content{padding:15px}.content-actions{justify-content:stretch}.content-actions button{width:100%}}
         `}</style>
       </AppShell>

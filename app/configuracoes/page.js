@@ -78,21 +78,36 @@ export default function Configuracoes() {
     carregar();
   }, []);
 
+  function origemMetaValida(origem = "") {
+    try {
+      const hostname = new URL(origem).hostname.toLowerCase();
+      return hostname === "facebook.com" || hostname.endsWith(".facebook.com");
+    } catch {
+      return false;
+    }
+  }
+
+  function extrairSessaoMeta(event) {
+    if (!origemMetaValida(event?.origin)) return null;
+    try {
+      const dados = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      if (dados?.type !== "WA_EMBEDDED_SIGNUP") return null;
+      if (dados?.event !== "FINISH" && dados?.event !== "FINISH_ONLY_WABA") return null;
+      return {
+        wabaId: dados?.data?.waba_id || "",
+        phoneNumberId: dados?.data?.phone_number_id || ""
+      };
+    } catch {
+      return null;
+    }
+  }
+
   useEffect(() => {
     function receberEventoMeta(event) {
-      if (!/^https:\/\/(www\.)?facebook\.com$/.test(event.origin)) return;
-      try {
-        const dados = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-        if (dados?.type !== "WA_EMBEDDED_SIGNUP") return;
-        if (dados?.event === "FINISH" || dados?.event === "FINISH_ONLY_WABA") {
-          const sessao = {
-            wabaId: dados?.data?.waba_id || "",
-            phoneNumberId: dados?.data?.phone_number_id || ""
-          };
-          window.__aluguelFacilMetaSessao = sessao;
-          setMetaSessao(sessao);
-        }
-      } catch {}
+      const sessao = extrairSessaoMeta(event);
+      if (!sessao) return;
+      window.__aluguelFacilMetaSessao = sessao;
+      setMetaSessao(sessao);
     }
 
     window.addEventListener("message", receberEventoMeta);
@@ -261,30 +276,52 @@ export default function Configuracoes() {
     setMetaSessao({ wabaId: "", phoneNumberId: "" });
     try {
       const FB = await carregarSdkMeta();
-      const resposta = await new Promise(resolve => {
-        FB.login(resolve, {
-          config_id: configId,
-          response_type: "code",
-          override_default_response_type: true,
-          extras: { setup: {} }
+      window.__aluguelFacilMetaSessao = { wabaId: "", phoneNumberId: "" };
+
+      let resolverSessao;
+      const promessaSessao = new Promise(resolve => { resolverSessao = resolve; });
+      const receberSessaoDestaConexao = event => {
+        const sessao = extrairSessaoMeta(event);
+        if (!sessao) return;
+        window.__aluguelFacilMetaSessao = sessao;
+        setMetaSessao(sessao);
+        resolverSessao?.(sessao);
+      };
+      window.addEventListener("message", receberSessaoDestaConexao);
+
+      let resposta;
+      try {
+        resposta = await new Promise(resolve => {
+          FB.login(resolve, {
+            config_id: configId,
+            response_type: "code",
+            override_default_response_type: true,
+            extras: { setup: {} }
+          });
         });
-      });
+      } finally {
+        // O listener continua por alguns segundos porque o evento FINISH pode chegar
+        // logo depois do callback do FB.login.
+      }
 
       const code = resposta?.authResponse?.code;
-      if (!code) throw new Error("A autorização da Meta foi cancelada ou não foi concluída.");
-
-      let sessao = metaSessao;
-      for (let i = 0; i < 20 && (!sessao.wabaId || !sessao.phoneNumberId); i++) {
-        await new Promise(r => setTimeout(r, 150));
-        sessao = window.__aluguelFacilMetaSessao || sessao;
+      if (!code) {
+        window.removeEventListener("message", receberSessaoDestaConexao);
+        throw new Error("A autorização da Meta foi cancelada ou não foi concluída.");
       }
 
-      const wabaId = sessao.wabaId || window.__aluguelFacilMetaSessao?.wabaId || "";
-      const phoneNumberId = sessao.phoneNumberId || window.__aluguelFacilMetaSessao?.phoneNumberId || "";
-      if (!wabaId || !phoneNumberId) {
-        throw new Error("A Meta autorizou o acesso, mas não retornou o número do WhatsApp. Tente conectar novamente.");
-      }
+      const sessaoEvento = await Promise.race([
+        promessaSessao,
+        new Promise(resolve => setTimeout(() => resolve(null), 4000))
+      ]);
+      window.removeEventListener("message", receberSessaoDestaConexao);
 
+      const sessao = sessaoEvento || window.__aluguelFacilMetaSessao || metaSessao || {};
+      const wabaId = sessao?.wabaId || "";
+      const phoneNumberId = sessao?.phoneNumberId || "";
+
+      // Mesmo quando a Meta não entrega o evento FINISH ao navegador, o servidor
+      // consegue descobrir os ativos autorizados a partir do token gerado pelo code.
       const json = await apiWhatsapp("POST", { code, wabaId, phoneNumberId });
       setWhatsapp(json.conexao || null);
       setMensagem("WhatsApp conectado com sucesso.");

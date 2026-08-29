@@ -34,16 +34,9 @@ export async function GET(request) {
 
   const supabase = criarSupabaseAdmin();
   const hoje = hojeFortalezaISO();
-  const template5Dias = process.env.WHATSAPP_TEMPLATE_LEMBRETE_5_DIAS;
-  const templateHoje = process.env.WHATSAPP_TEMPLATE_VENCIMENTO_HOJE;
-  const templateAtraso = process.env.WHATSAPP_TEMPLATE_ATRASO_5_DIAS;
-
-  if (!template5Dias || !templateHoje || !templateAtraso) {
-    return NextResponse.json(
-      { ok: false, erro: "Configure os três templates automáticos do WhatsApp." },
-      { status: 500 }
-    );
-  }
+  const template5Dias = process.env.WHATSAPP_TEMPLATE_LEMBRETE_5_DIAS || "aluguel_lembrete_5_dias";
+  const templateHoje = process.env.WHATSAPP_TEMPLATE_VENCIMENTO_HOJE || "aluguel_vencimento_hoje";
+  const templateAtraso = process.env.WHATSAPP_TEMPLATE_ATRASO_5_DIAS || "aluguel_atrasado_5_dias";
 
   const { data: recebimentos, error } = await supabase
     .from("recebimentos")
@@ -164,6 +157,7 @@ export async function GET(request) {
       enviados += 1;
     } catch (e) {
       const mensagem = e?.message || "Falha desconhecida";
+      console.error("[WhatsApp cron] Falha no disparo:", mensagem);
       falhas.push({ recebimento_id: item.r.id, erro: mensagem });
       await registrarFalha(supabase, {
         empresa_id: item.r.empresa_id,

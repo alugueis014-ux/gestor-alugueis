@@ -29,10 +29,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, erro: "Recebimento não informado." }, { status: 400 });
     }
 
-    const template = process.env.WHATSAPP_TEMPLATE_PAGAMENTO;
-    if (!template) {
-      return NextResponse.json({ ok: false, erro: "WHATSAPP_TEMPLATE_PAGAMENTO não configurado." }, { status: 500 });
-    }
+    const template = process.env.WHATSAPP_TEMPLATE_PAGAMENTO || "aluguel_confirmacao_pagamento";
 
     const { data: r, error } = await supabase
       .from("recebimentos")
@@ -110,6 +107,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, enviado: true });
     } catch (e) {
       const mensagem = e?.message || "Falha desconhecida";
+      console.error("[WhatsApp pagamento] Falha ao enviar confirmação:", mensagem);
       await supabase.from("whatsapp_disparos").insert({
         empresa_id: r.empresa_id,
         recebimento_id: r.id,
@@ -126,6 +124,8 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, erro: mensagem }, { status: 502 });
     }
   } catch (e) {
-    return NextResponse.json({ ok: false, erro: e?.message || "Erro interno." }, { status: 500 });
+    const mensagem = e?.message || "Erro interno.";
+    console.error("[WhatsApp pagamento] Erro interno:", mensagem);
+    return NextResponse.json({ ok: false, erro: mensagem }, { status: 500 });
   }
 }

@@ -7,6 +7,8 @@ import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
+import { abrirWhatsApp } from "../../lib/whatsapp";
+import { notificarPagamentoWhatsApp } from "../../lib/whatsapp-client";
 
 
 async function obterEmpresaId() {
@@ -295,6 +297,10 @@ export default function Acompanhamento() {
 
       if (error) throw error;
 
+      notificarPagamentoWhatsApp(modalReceber.id).catch(err =>
+        console.warn("WhatsApp pagamento:", err?.message || err)
+      );
+
       setModalReceber(null);
       await carregarRecebimentos();
     } catch (e) {
@@ -305,33 +311,36 @@ export default function Acompanhamento() {
   }
 
   function whatsapp(r) {
-    if (r.statusExibido !== "Atrasado") {
-      return alert("A cobrança por WhatsApp fica disponível somente para aluguéis atrasados.");
-    }
+    if (!["Atrasado", "Pendente"].includes(r.statusExibido)) return;
 
-    const tel = String(r.inquilino?.telefone || "").replace(/\D/g, "");
-    if (!tel) {
-      return alert("Este inquilino não possui telefone cadastrado. Edite o cadastro antes de enviar a cobrança.");
-    }
-
-    const numero = tel.startsWith("55") ? tel : `55${tel}`;
     const vencimento = new Date(`${r.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR");
     const nome = r.inquilino?.nome || "inquilino";
     const predioNome = r.predio?.nome || "imóvel";
     const apartamentoNumero = r.apartamento?.numero || "não informado";
 
-    const texto = [
-      `Olá, ${nome}.`,
-      "",
-      `Identificamos um aluguel em aberto no valor de ${moeda(r.valor_previsto)}, referente ao ${predioNome}, apartamento ${apartamentoNumero}.`,
-      `O vencimento ocorreu em ${vencimento} e o pagamento está com ${r.atraso} dia(s) de atraso.`,
-      "",
-      "Caso o pagamento já tenha sido realizado, por favor desconsidere esta mensagem e, se possível, envie o comprovante.",
-      "",
-      "Em caso de dúvida, entre em contato."
-    ].join("\n");
+    const texto = r.statusExibido === "Atrasado"
+      ? [
+          `Olá, ${nome}.`,
+          "",
+          `Identificamos um aluguel em aberto no valor de ${moeda(r.valor_previsto)}, referente ao ${predioNome}, apartamento ${apartamentoNumero}.`,
+          `O vencimento ocorreu em ${vencimento} e o pagamento está com ${r.atraso} dia(s) de atraso.`,
+          "",
+          "Caso o pagamento já tenha sido realizado, por favor desconsidere esta mensagem e, se possível, envie o comprovante.",
+          "",
+          "Em caso de dúvida, entre em contato."
+        ].join("\n")
+      : [
+          `Olá, ${nome}.`,
+          "",
+          `Passando para lembrar que o aluguel de ${moeda(r.valor_previsto)}, referente ao ${predioNome}, apartamento ${apartamentoNumero}, tem vencimento em ${vencimento}.`,
+          "",
+          "Caso o pagamento já tenha sido realizado, por favor desconsidere esta mensagem.",
+          "",
+          "Em caso de dúvida, entre em contato."
+        ].join("\n");
 
-    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(texto)}`, "_blank", "noopener,noreferrer");
+    const resultado = abrirWhatsApp({ telefone: r.inquilino?.telefone, mensagem: texto });
+    if (!resultado.ok) alert(resultado.erro);
   }
 
   function recibo(r) {
@@ -364,7 +373,7 @@ export default function Acompanhamento() {
           {grupo.endereco&&<p>{grupo.endereco}</p>}
         </div>
         <div className="tracking-table-wrap"><table className="tracking-table"><thead><tr><th>Apartamento</th><th>Inquilino</th><th>Telefone</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Dias em atraso</th><th>Ações</th></tr></thead><tbody>
-          {grupo.linhas.map(r=><tr key={r.id}><td>{r.apartamento?.numero||"-"}</td><td>{r.inquilino?.nome||"-"}</td><td>{r.inquilino?.telefone||"-"}</td><td>{new Date(`${r.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>{moeda(r.valor_previsto)}</td><td><span className={`tracking-status ${r.statusExibido.toLowerCase()}`}>{r.statusExibido}</span></td><td>{r.atraso?`${r.atraso} dia(s)`:"-"}</td><td><div className="tracking-actions">{r.statusExibido!=="Pago"&&<button className="primary" onClick={()=>abrirReceber(r)}>Receber</button>}{r.statusExibido==="Atrasado"&&<button className="secondary tracking-whatsapp" onClick={()=>whatsapp(r)}>WhatsApp</button>}{r.statusExibido==="Pago"&&<button className="secondary" onClick={()=>recibo(r)}>Recibo</button>}</div></td></tr>)}
+          {grupo.linhas.map(r=><tr key={r.id}><td>{r.apartamento?.numero||"-"}</td><td>{r.inquilino?.nome||"-"}</td><td>{r.inquilino?.telefone||"-"}</td><td>{new Date(`${r.data_vencimento}T12:00:00`).toLocaleDateString("pt-BR")}</td><td>{moeda(r.valor_previsto)}</td><td><span className={`tracking-status ${r.statusExibido.toLowerCase()}`}>{r.statusExibido}</span></td><td>{r.atraso?`${r.atraso} dia(s)`:"-"}</td><td><div className="tracking-actions">{r.statusExibido!=="Pago"&&<button className="primary" onClick={()=>abrirReceber(r)}>Receber</button>}{["Atrasado","Pendente"].includes(r.statusExibido)&&<button className="secondary tracking-whatsapp" onClick={()=>whatsapp(r)}>{r.statusExibido==="Atrasado"?"Cobrar no WhatsApp":"Lembrar no WhatsApp"}</button>}{r.statusExibido==="Pago"&&<button className="secondary" onClick={()=>recibo(r)}>Recibo</button>}</div></td></tr>)}
         </tbody></table></div>
       </section>)}
     </div>}

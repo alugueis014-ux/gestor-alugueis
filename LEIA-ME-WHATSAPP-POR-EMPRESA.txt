@@ -1,0 +1,27 @@
+ALUGUEL FÁCIL - WHATSAPP POR EMPRESA
+
+1. Rode no Supabase o arquivo:
+   supabase/migrations/010_whatsapp_conexao_empresa.sql
+
+2. No localhost, entre em Configurações > WhatsApp.
+
+3. Enquanto o Embedded Signup da Meta não tiver um Configuration ID configurado,
+   use o botão "Usar número de teste da Meta" para validar o fluxo local.
+
+4. Para ativar o botão "Conectar WhatsApp" com login da Meta em produção, configure:
+   NEXT_PUBLIC_META_WHATSAPP_CONFIG_ID
+   META_APP_SECRET
+   NEXT_PUBLIC_META_APP_ID já foi deixado preparado para o app AlugueFácil.
+
+5. Cada empresa passa a ter sua própria conexão na tabela whatsapp_conexoes.
+   O token não é lido pelo navegador; as rotas do servidor acessam a tabela com service_role.
+
+6. Os 4 disparos usam a conexão da empresa do recebimento:
+   - 5 dias antes
+   - no vencimento
+   - 5 dias depois, se pendente
+   - confirmação ao mudar para Pago
+
+IMPORTANTE:
+- Antes do deploy final, rotacione tokens/chaves que foram compartilhados durante os testes.
+- O ZIP não inclui node_modules.

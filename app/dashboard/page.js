@@ -10,6 +10,7 @@ import { supabase } from "../../lib/supabase";
 import Icon from "../../components/Icon";
 import { obterEmpresaId } from "../../lib/empresa";
 import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
+import { notificarPagamentoWhatsApp } from "../../lib/whatsapp-client";
 
 const dinheiro = valor => Number(valor || 0).toLocaleString("pt-BR", {
   style: "currency",
@@ -512,6 +513,10 @@ export default function Dashboard() {
       setErro(error.message);
       return;
     }
+
+    notificarPagamentoWhatsApp(modalRecebimento.id).catch(err =>
+      console.warn("WhatsApp pagamento:", err?.message || err)
+    );
 
     setModalRecebimento(null);
     setFormaPagamentoRapido("pix");

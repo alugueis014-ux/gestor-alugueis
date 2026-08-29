@@ -1,0 +1,46 @@
+ALUGUEL FÁCIL — WHATSAPP AUTOMÁTICO COM META
+
+FLUXO CONFIGURADO
+1) 5 dias antes do vencimento: aluguel_lembrete_5_dias
+2) No dia do vencimento: aluguel_vencimento_hoje
+3) 5 dias após o vencimento, se continuar pendente: aluguel_atrasado_5_dias
+4) Quando o recebimento mudar para Pago: aluguel_confirmacao_pagamento
+
+O envio de confirmação de pagamento foi ligado aos fluxos de baixa existentes em:
+- Início / baixa rápida
+- Recebimentos
+- Acompanhamento
+- Edição do recebimento quando há transição para Pago
+
+MIGRATIONS DO SUPABASE
+Execute, na ordem:
+008_whatsapp_automatico_meta.sql
+009_whatsapp_confirmacao_pagamento.sql
+
+IMPORTANTE SOBRE .env.local
+O arquivo já está preenchido com as credenciais do ambiente de TESTE Meta informadas para o Aluguel Fácil.
+Ainda é necessário preencher SUPABASE_SERVICE_ROLE_KEY.
+Nunca envie .env.local para GitHub.
+
+QUARTO TEMPLATE
+Crie/aprove na Meta exatamente com o nome:
+aluguel_confirmacao_pagamento
+
+Idioma: Portuguese (BR)
+Categoria: Utilidade / Padrão
+Corpo sugerido:
+Olá, {{1}}. Confirmamos o recebimento do aluguel referente a {{2}}, no valor de {{3}}, pago em {{4}}.
+
+Obrigado. Seu pagamento foi registrado com sucesso.
+
+Amostras:
+{{1}} João
+{{2}} Apartamento 101
+{{3}} R$ 1.200,00
+{{4}} 10/09/2026
+
+CRON
+A rota automática permanece em:
+/api/whatsapp/cron
+
+A Vercel deve chamar a rota conforme vercel.json. O header Authorization deve ser Bearer <CRON_SECRET>.

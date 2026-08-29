@@ -516,3 +516,12 @@ label{display:flex;flex-direction:column;gap:6px;font-weight:700}input,select,te
   background: #eef3f8;
   border-radius: 999px;
 }
+
+.tenant-whatsapp{
+  border-color:#15803d;
+  color:#15803d;
+  font-weight:700;
+}
+.tenant-whatsapp:hover{
+  background:#dcfce7;
+}

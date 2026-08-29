@@ -14,6 +14,17 @@ export default function Configuracoes() {
   const [telefone, setTelefone] = useState("");
   const [email, setEmail] = useState("");
   const [empresaNome, setEmpresaNome] = useState("");
+  const [empresaRazaoSocial, setEmpresaRazaoSocial] = useState("");
+  const [empresaDocumento, setEmpresaDocumento] = useState("");
+  const [empresaTelefone, setEmpresaTelefone] = useState("");
+  const [empresaEmail, setEmpresaEmail] = useState("");
+  const [empresaCep, setEmpresaCep] = useState("");
+  const [empresaEndereco, setEmpresaEndereco] = useState("");
+  const [empresaNumero, setEmpresaNumero] = useState("");
+  const [empresaComplemento, setEmpresaComplemento] = useState("");
+  const [empresaBairro, setEmpresaBairro] = useState("");
+  const [empresaCidade, setEmpresaCidade] = useState("");
+  const [empresaEstado, setEmpresaEstado] = useState("");
 
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
@@ -25,9 +36,67 @@ export default function Configuracoes() {
   const [salvandoSenha, setSalvandoSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [mensagem, setMensagem] = useState("");
+  const [whatsapp, setWhatsapp] = useState(null);
+  const [carregandoWhatsapp, setCarregandoWhatsapp] = useState(false);
+  const [conectandoWhatsapp, setConectandoWhatsapp] = useState(false);
+  const [metaSessao, setMetaSessao] = useState({ wabaId: "", phoneNumberId: "" });
+  const [abaAtiva, setAbaAtiva] = useState("empresa");
+
+  function somenteDigitos(valor = "") {
+    return String(valor).replace(/\D/g, "");
+  }
+
+  function mascararTelefone(valor = "") {
+    const n = somenteDigitos(valor).slice(0, 11);
+    if (n.length <= 2) return n;
+    if (n.length <= 6) return `(${n.slice(0, 2)}) ${n.slice(2)}`;
+    if (n.length <= 10) return `(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`;
+    return `(${n.slice(0, 2)}) ${n.slice(2, 7)}-${n.slice(7)}`;
+  }
+
+  function mascararDocumento(valor = "") {
+    const n = somenteDigitos(valor).slice(0, 14);
+    if (n.length <= 11) {
+      return n
+        .replace(/(\d{3})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+    }
+    return n
+      .replace(/^(\d{2})(\d)/, "$1.$2")
+      .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1/$2")
+      .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+  }
+
+  function mascararCep(valor = "") {
+    const n = somenteDigitos(valor).slice(0, 8);
+    return n.replace(/(\d{5})(\d)/, "$1-$2");
+  }
 
   useEffect(() => {
     carregar();
+  }, []);
+
+  useEffect(() => {
+    function receberEventoMeta(event) {
+      if (!/^https:\/\/(www\.)?facebook\.com$/.test(event.origin)) return;
+      try {
+        const dados = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (dados?.type !== "WA_EMBEDDED_SIGNUP") return;
+        if (dados?.event === "FINISH" || dados?.event === "FINISH_ONLY_WABA") {
+          const sessao = {
+            wabaId: dados?.data?.waba_id || "",
+            phoneNumberId: dados?.data?.phone_number_id || ""
+          };
+          window.__aluguelFacilMetaSessao = sessao;
+          setMetaSessao(sessao);
+        }
+      } catch {}
+    }
+
+    window.addEventListener("message", receberEventoMeta);
+    return () => window.removeEventListener("message", receberEventoMeta);
   }, []);
 
   async function obterEmpresaId(userId) {
@@ -73,7 +142,7 @@ export default function Configuracoes() {
 
       const { data: empresa, error: empresaError } = await supabase
         .from("empresas")
-        .select("id,nome")
+        .select("id,nome,razao_social,documento,telefone,email,cep,endereco,numero,complemento,bairro,cidade,estado")
         .eq("id", idEmpresa)
         .single();
 
@@ -84,10 +153,161 @@ export default function Configuracoes() {
       setNome(user.user_metadata?.nome || "");
       setTelefone(user.user_metadata?.telefone || "");
       setEmpresaNome(empresa?.nome || "");
+      setEmpresaRazaoSocial(empresa?.razao_social || "");
+      setEmpresaDocumento(mascararDocumento(empresa?.documento || ""));
+      setEmpresaTelefone(mascararTelefone(empresa?.telefone || ""));
+      setEmpresaEmail(empresa?.email || "");
+      setEmpresaCep(mascararCep(empresa?.cep || ""));
+      setEmpresaEndereco(empresa?.endereco || "");
+      setEmpresaNumero(empresa?.numero || "");
+      setEmpresaComplemento(empresa?.complemento || "");
+      setEmpresaBairro(empresa?.bairro || "");
+      setEmpresaCidade(empresa?.cidade || "");
+      setEmpresaEstado((empresa?.estado || "").toUpperCase());
+      setTimeout(() => carregarWhatsapp(), 0);
     } catch (e) {
       setErro(e.message || "Não foi possível carregar as configurações.");
     } finally {
       setCarregando(false);
+    }
+  }
+
+  async function apiWhatsapp(method = "GET", body = null) {
+    const { data: sessao } = await supabase.auth.getSession();
+    const token = sessao?.session?.access_token;
+    if (!token) throw new Error("Sessão inválida. Entre novamente no sistema.");
+
+    const resposta = await fetch("/api/whatsapp/conexao", {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body ? { "Content-Type": "application/json" } : {})
+      },
+      ...(body ? { body: JSON.stringify(body) } : {})
+    });
+    const json = await resposta.json().catch(() => ({}));
+    if (!resposta.ok || !json?.ok) throw new Error(json?.erro || "Não foi possível concluir a operação.");
+    return json;
+  }
+
+  async function carregarWhatsapp() {
+    setCarregandoWhatsapp(true);
+    try {
+      const json = await apiWhatsapp("GET");
+      setWhatsapp(json.conexao || null);
+    } catch (e) {
+      if (!/whatsapp_conexoes|relation.*does not exist/i.test(e.message || "")) {
+        setErro(e.message || "Não foi possível consultar o WhatsApp.");
+      }
+    } finally {
+      setCarregandoWhatsapp(false);
+    }
+  }
+
+  async function conectarWhatsAppTeste() {
+    setErro("");
+    setMensagem("");
+    setConectandoWhatsapp(true);
+    try {
+      const json = await apiWhatsapp("POST", { modo: "teste" });
+      setWhatsapp(json.conexao || null);
+      setMensagem("WhatsApp de teste conectado a esta empresa.");
+    } catch (e) {
+      setErro(e.message || "Não foi possível conectar o WhatsApp de teste.");
+    } finally {
+      setConectandoWhatsapp(false);
+    }
+  }
+
+  function carregarSdkMeta() {
+    return new Promise((resolve, reject) => {
+      if (window.FB) return resolve(window.FB);
+      const existente = document.getElementById("facebook-jssdk");
+      if (existente) {
+        const limite = setTimeout(() => reject(new Error("A Meta demorou para carregar.")), 10000);
+        existente.addEventListener("load", () => { clearTimeout(limite); resolve(window.FB); }, { once: true });
+        return;
+      }
+      window.fbAsyncInit = function () {
+        window.FB.init({
+          appId: process.env.NEXT_PUBLIC_META_APP_ID,
+          autoLogAppEvents: true,
+          xfbml: true,
+          version: process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION || "v25.0"
+        });
+        resolve(window.FB);
+      };
+      const script = document.createElement("script");
+      script.id = "facebook-jssdk";
+      script.src = "https://connect.facebook.net/pt_BR/sdk.js";
+      script.async = true;
+      script.defer = true;
+      script.onerror = () => reject(new Error("Não foi possível carregar a conexão da Meta."));
+      document.body.appendChild(script);
+    });
+  }
+
+  async function conectarWhatsApp() {
+    setErro("");
+    setMensagem("");
+    const configId = process.env.NEXT_PUBLIC_META_WHATSAPP_CONFIG_ID;
+    const appId = process.env.NEXT_PUBLIC_META_APP_ID;
+    if (!configId || !appId) {
+      setErro("A conexão automática da Meta ainda precisa do Configuration ID do Embedded Signup.");
+      return;
+    }
+
+    setConectandoWhatsapp(true);
+    setMetaSessao({ wabaId: "", phoneNumberId: "" });
+    try {
+      const FB = await carregarSdkMeta();
+      const resposta = await new Promise(resolve => {
+        FB.login(resolve, {
+          config_id: configId,
+          response_type: "code",
+          override_default_response_type: true,
+          extras: { setup: {} }
+        });
+      });
+
+      const code = resposta?.authResponse?.code;
+      if (!code) throw new Error("A autorização da Meta foi cancelada ou não foi concluída.");
+
+      let sessao = metaSessao;
+      for (let i = 0; i < 20 && (!sessao.wabaId || !sessao.phoneNumberId); i++) {
+        await new Promise(r => setTimeout(r, 150));
+        sessao = window.__aluguelFacilMetaSessao || sessao;
+      }
+
+      const wabaId = sessao.wabaId || window.__aluguelFacilMetaSessao?.wabaId || "";
+      const phoneNumberId = sessao.phoneNumberId || window.__aluguelFacilMetaSessao?.phoneNumberId || "";
+      if (!wabaId || !phoneNumberId) {
+        throw new Error("A Meta autorizou o acesso, mas não retornou o número do WhatsApp. Tente conectar novamente.");
+      }
+
+      const json = await apiWhatsapp("POST", { code, wabaId, phoneNumberId });
+      setWhatsapp(json.conexao || null);
+      setMensagem("WhatsApp conectado com sucesso.");
+    } catch (e) {
+      setErro(e.message || "Não foi possível conectar o WhatsApp.");
+    } finally {
+      setConectandoWhatsapp(false);
+    }
+  }
+
+  async function desconectarWhatsApp() {
+    if (!window.confirm("Desconectar o WhatsApp desta empresa? Os lembretes automáticos deixarão de ser enviados.")) return;
+    setErro("");
+    setMensagem("");
+    setConectandoWhatsapp(true);
+    try {
+      await apiWhatsapp("DELETE");
+      setWhatsapp(null);
+      setMensagem("WhatsApp desconectado.");
+    } catch (e) {
+      setErro(e.message || "Não foi possível desconectar o WhatsApp.");
+    } finally {
+      setConectandoWhatsapp(false);
     }
   }
 
@@ -120,7 +340,20 @@ export default function Configuracoes() {
 
       const { error: empresaError } = await supabase
         .from("empresas")
-        .update({ nome: empresaNome.trim() })
+        .update({
+          nome: empresaNome.trim(),
+          razao_social: empresaRazaoSocial.trim() || null,
+          documento: somenteDigitos(empresaDocumento) || null,
+          telefone: somenteDigitos(empresaTelefone) || null,
+          email: empresaEmail.trim() || null,
+          cep: somenteDigitos(empresaCep) || null,
+          endereco: empresaEndereco.trim() || null,
+          numero: empresaNumero.trim() || null,
+          complemento: empresaComplemento.trim() || null,
+          bairro: empresaBairro.trim() || null,
+          cidade: empresaCidade.trim() || null,
+          estado: empresaEstado.trim().toUpperCase() || null
+        })
         .eq("id", empresaId);
 
       if (empresaError) throw empresaError;
@@ -173,135 +406,138 @@ export default function Configuracoes() {
     <AuthGuard>
       <AppShell>
         <div className="settings-page">
-          <div className="page-header settings-header">
-            <div>
-              <h2>Configurações</h2>
-              <p>Gerencie seus dados de acesso e as informações do residencial.</p>
-            </div>
+          <div className="settings-heading">
+            <span className="settings-kicker">Sistema</span>
+            <h2>Configurações</h2>
+            <p>Gerencie os dados da empresa, a integração com WhatsApp e a segurança da sua conta.</p>
           </div>
 
           {carregando ? (
             <div className="panel settings-loading">Carregando configurações...</div>
           ) : (
-            <div className="settings-grid">
-              <form className="panel settings-card" onSubmit={salvarPerfil}>
-                <div className="settings-title">
-                  <span className="settings-icon"><Icon name="user" size={21} /></span>
-                  <div>
-                    <h3>Perfil e residencial</h3>
-                    <p>Informações utilizadas no seu acesso e no sistema.</p>
-                  </div>
-                </div>
-
-                <div className="settings-form">
-                  <label>
-                    Seu nome
-                    <input
-                      value={nome}
-                      onChange={e => setNome(e.target.value)}
-                      placeholder="Seu nome"
-                      required
-                    />
-                  </label>
-
-                  <label>
-                    Celular / WhatsApp
-                    <input
-                      value={telefone}
-                      onChange={e => setTelefone(e.target.value)}
-                      placeholder="(00) 00000-0000"
-                      inputMode="tel"
-                    />
-                  </label>
-
-                  <label>
-                    E-mail de acesso
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="seuemail@exemplo.com"
-                      required
-                    />
-                  </label>
-
-                  <label>
-                    Nome do residencial / empresa
-                    <input
-                      value={empresaNome}
-                      onChange={e => setEmpresaNome(e.target.value)}
-                      placeholder="Nome do residencial"
-                      required
-                    />
-                  </label>
-                </div>
-
-                <button className="primary settings-save" disabled={salvandoPerfil}>
-                  {salvandoPerfil ? "Salvando..." : "Salvar alterações"}
+            <div className="settings-layout">
+              <aside className="settings-nav" aria-label="Seções das configurações">
+                <button type="button" className={abaAtiva === "empresa" ? "active" : ""} onClick={() => setAbaAtiva("empresa")}>
+                  <span className="settings-nav-icon"><Icon name="user" size={18} /></span>
+                  <span>Dados da empresa</span>
                 </button>
-              </form>
-
-              <form className="panel settings-card" onSubmit={alterarSenha}>
-                <div className="settings-title">
-                  <span className="settings-icon"><Icon name="lock" size={21} /></span>
-                  <div>
-                    <h3>Alterar senha</h3>
-                    <p>Defina uma nova senha para entrar no sistema.</p>
-                  </div>
-                </div>
-
-                <div className="settings-form">
-                  <label>
-                    Nova senha
-                    <div className="settings-password">
-                      <input
-                        type={mostrarSenha ? "text" : "password"}
-                        value={novaSenha}
-                        onChange={e => setNovaSenha(e.target.value)}
-                        minLength={6}
-                        autoComplete="new-password"
-                        required
-                      />
-                      <button
-                        type="button"
-                        className="settings-eye"
-                        onClick={() => setMostrarSenha(v => !v)}
-                        title={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
-                        aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
-                      >
-                        <Icon name={mostrarSenha ? "eyeOff" : "eye"} size={18} />
-                      </button>
-                    </div>
-                  </label>
-
-                  <label>
-                    Confirmar nova senha
-                    <div className="settings-password">
-                      <input
-                        type={mostrarConfirmacao ? "text" : "password"}
-                        value={confirmarSenha}
-                        onChange={e => setConfirmarSenha(e.target.value)}
-                        minLength={6}
-                        autoComplete="new-password"
-                        required
-                      />
-                      <button
-                        type="button"
-                        className="settings-eye"
-                        onClick={() => setMostrarConfirmacao(v => !v)}
-                        title={mostrarConfirmacao ? "Ocultar senha" : "Mostrar senha"}
-                        aria-label={mostrarConfirmacao ? "Ocultar senha" : "Mostrar senha"}
-                      >
-                        <Icon name={mostrarConfirmacao ? "eyeOff" : "eye"} size={18} />
-                      </button>
-                    </div>
-                  </label>
-                </div>
-
-                <button className="primary settings-save" disabled={salvandoSenha}>
-                  {salvandoSenha ? "Alterando..." : "Alterar senha"}
+                <button type="button" className={abaAtiva === "whatsapp" ? "active" : ""} onClick={() => setAbaAtiva("whatsapp")}>
+                  <span className="settings-nav-icon"><Icon name="whatsapp" size={18} /></span>
+                  <span>WhatsApp</span>
+                  <span className={`settings-nav-status ${whatsapp?.status === "conectado" ? "online" : ""}`} />
                 </button>
-              </form>
+                <div className="settings-nav-divider" />
+                <button type="button" className={abaAtiva === "seguranca" ? "active" : ""} onClick={() => setAbaAtiva("seguranca")}>
+                  <span className="settings-nav-icon"><Icon name="lock" size={18} /></span>
+                  <span>Segurança</span>
+                </button>
+              </aside>
+
+              <section className="settings-content">
+                {abaAtiva === "empresa" && (
+                  <form onSubmit={salvarPerfil}>
+                    <div className="content-head">
+                      <span>EMPRESA</span>
+                      <h3>Dados da empresa</h3>
+                      <p>Mantenha completos os dados usados nos contratos, relatórios, comunicações e documentos do Aluguel Fácil.</p>
+                    </div>
+
+                    <div className="company-section">
+                      <div className="section-title"><h4>Identificação</h4><p>Dados principais da empresa, residencial ou proprietário.</p></div>
+                      <div className="content-box no-top">
+                        <div className="settings-form two-cols">
+                          <label>Nome da empresa / residencial *<input value={empresaNome} onChange={e => setEmpresaNome(e.target.value)} placeholder="Nome para exibição" required /></label>
+                          <label>Razão social<input value={empresaRazaoSocial} onChange={e => setEmpresaRazaoSocial(e.target.value)} placeholder="Opcional para pessoa jurídica" /></label>
+                          <label>CPF / CNPJ<input value={empresaDocumento} onChange={e => setEmpresaDocumento(mascararDocumento(e.target.value))} placeholder="CPF ou CNPJ" inputMode="numeric" /></label>
+                          <label>E-mail da empresa<input type="email" value={empresaEmail} onChange={e => setEmpresaEmail(e.target.value)} placeholder="contato@empresa.com.br" /></label>
+                          <label>Celular / WhatsApp da empresa<input value={empresaTelefone} onChange={e => setEmpresaTelefone(mascararTelefone(e.target.value))} placeholder="(00) 00000-0000" inputMode="tel" /></label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="company-section">
+                      <div className="section-title"><h4>Endereço</h4><p>Endereço principal para identificação e emissão de documentos.</p></div>
+                      <div className="content-box no-top">
+                        <div className="settings-form address-grid">
+                          <label className="cep-field">CEP<input value={empresaCep} onChange={e => setEmpresaCep(mascararCep(e.target.value))} placeholder="00000-000" inputMode="numeric" /></label>
+                          <label className="street-field">Endereço<input value={empresaEndereco} onChange={e => setEmpresaEndereco(e.target.value)} placeholder="Rua, avenida, travessa..." /></label>
+                          <label>Número<input value={empresaNumero} onChange={e => setEmpresaNumero(e.target.value)} placeholder="Nº" /></label>
+                          <label>Complemento<input value={empresaComplemento} onChange={e => setEmpresaComplemento(e.target.value)} placeholder="Sala, bloco, complemento" /></label>
+                          <label>Bairro<input value={empresaBairro} onChange={e => setEmpresaBairro(e.target.value)} placeholder="Bairro" /></label>
+                          <label>Cidade<input value={empresaCidade} onChange={e => setEmpresaCidade(e.target.value)} placeholder="Cidade" /></label>
+                          <label>UF<input value={empresaEstado} onChange={e => setEmpresaEstado(e.target.value.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase())} placeholder="UF" maxLength={2} /></label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="company-section">
+                      <div className="section-title"><h4>Responsável pela conta</h4><p>Dados pessoais utilizados para acesso e administração do sistema.</p></div>
+                      <div className="content-box no-top">
+                        <div className="settings-form two-cols">
+                          <label>Nome do responsável *<input value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome completo" required /></label>
+                          <label>Celular do responsável<input value={telefone} onChange={e => setTelefone(mascararTelefone(e.target.value))} placeholder="(00) 00000-0000" inputMode="tel" /></label>
+                          <label className="full-field">E-mail de acesso *<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seuemail@exemplo.com" required /></label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="content-actions"><button className="primary settings-save" disabled={salvandoPerfil}>{salvandoPerfil ? "Salvando..." : "Salvar alterações"}</button></div>
+                  </form>
+                )}
+
+                {abaAtiva === "whatsapp" && (
+                  <div>
+                    <div className="content-head">
+                      <span>INTEGRAÇÃO</span>
+                      <h3>WhatsApp</h3>
+                      <p>Conecte o número da empresa para enviar avisos automáticos aos inquilinos.</p>
+                    </div>
+                    {carregandoWhatsapp ? <div className="content-box whatsapp-loading">Consultando conexão...</div> : whatsapp?.status === "conectado" ? (
+                      <>
+                        <div className="connection-card connected">
+                          <div className="connection-main">
+                            <span className="connection-logo"><Icon name="whatsapp" size={25} /></span>
+                            <div><div className="status-label"><span className="status-dot" /> CONECTADO</div><h4>WhatsApp conectado</h4><p>{whatsapp.numero_exibicao || "Número autorizado pela Meta"}</p></div>
+                          </div>
+                          {whatsapp.nome_conta && <div className="account-chip">Conta: <strong>{whatsapp.nome_conta}</strong></div>}
+                        </div>
+                        <div className="automation-box">
+                          <div className="automation-head"><h4>Automações de cobrança</h4><p>Mensagens que o Aluguel Fácil pode enviar automaticamente.</p></div>
+                          <div className="automation-grid">
+                            <div><b>✓</b><span><strong>5 dias antes</strong><small>Lembrete antes do vencimento</small></span></div>
+                            <div><b>✓</b><span><strong>No vencimento</strong><small>Aviso no dia programado</small></span></div>
+                            <div><b>✓</b><span><strong>5 dias depois</strong><small>Somente se continuar pendente</small></span></div>
+                            <div><b>✓</b><span><strong>Pagamento confirmado</strong><small>Confirmação após registrar a baixa</small></span></div>
+                          </div>
+                        </div>
+                        <div className="content-actions left"><button type="button" className="danger whatsapp-disconnect" onClick={desconectarWhatsApp} disabled={conectandoWhatsapp}>{conectandoWhatsapp ? "Desconectando..." : "Desconectar WhatsApp"}</button></div>
+                      </>
+                    ) : (
+                      <div className="connection-card empty">
+                        <span className="connection-logo"><Icon name="whatsapp" size={28} /></span>
+                        <div className="empty-copy"><div className="status-label offline"><span className="status-dot" /> NÃO CONECTADO</div><h4>Conecte o WhatsApp da empresa</h4><p>Cada empresa conecta o próprio número. A conexão fica vinculada somente a esta empresa.</p></div>
+                        <div className="connect-actions">
+                          <button type="button" className="primary" onClick={conectarWhatsApp} disabled={conectandoWhatsapp}>{conectandoWhatsapp ? "Conectando..." : "Conectar WhatsApp"}</button>
+                          {process.env.NEXT_PUBLIC_WHATSAPP_PERMITIR_TESTE === "true" && <button type="button" className="secondary" onClick={conectarWhatsAppTeste} disabled={conectandoWhatsapp}>Usar número de teste da Meta</button>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {abaAtiva === "seguranca" && (
+                  <form onSubmit={alterarSenha}>
+                    <div className="content-head"><span>CONTA</span><h3>Segurança</h3><p>Altere a senha utilizada para acessar o Aluguel Fácil.</p></div>
+                    <div className="content-box password-box">
+                      <div className="settings-form">
+                        <label>Nova senha<div className="settings-password"><input type={mostrarSenha ? "text" : "password"} value={novaSenha} onChange={e => setNovaSenha(e.target.value)} minLength={6} autoComplete="new-password" required /><button type="button" className="settings-eye" onClick={() => setMostrarSenha(v => !v)} aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}><Icon name={mostrarSenha ? "eyeOff" : "eye"} size={18} /></button></div></label>
+                        <label>Confirmar nova senha<div className="settings-password"><input type={mostrarConfirmacao ? "text" : "password"} value={confirmarSenha} onChange={e => setConfirmarSenha(e.target.value)} minLength={6} autoComplete="new-password" required /><button type="button" className="settings-eye" onClick={() => setMostrarConfirmacao(v => !v)} aria-label={mostrarConfirmacao ? "Ocultar senha" : "Mostrar senha"}><Icon name={mostrarConfirmacao ? "eyeOff" : "eye"} size={18} /></button></div></label>
+                      </div>
+                    </div>
+                    <div className="content-actions"><button className="primary settings-save" disabled={salvandoSenha}>{salvandoSenha ? "Alterando..." : "Alterar senha"}</button></div>
+                  </form>
+                )}
+              </section>
             </div>
           )}
 
@@ -310,129 +546,9 @@ export default function Configuracoes() {
         </div>
 
         <style jsx>{`
-          .settings-page {
-            display: grid;
-            gap: 18px;
-          }
-
-          .settings-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
-          }
-
-          .settings-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
-            gap: 18px;
-            align-items: start;
-          }
-
-          .settings-card {
-            display: grid;
-            gap: 20px;
-          }
-
-          .settings-title {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding-bottom: 14px;
-            border-bottom: 1px solid #e4ebf2;
-          }
-
-          .settings-icon {
-            width: 42px;
-            height: 42px;
-            display: grid;
-            place-items: center;
-            background: #e8f1fb;
-            border-radius: 11px;
-            font-size: 21px;
-          }
-
-          .settings-title h3 {
-            margin: 0;
-            font-size: 18px;
-          }
-
-          .settings-title p {
-            margin: 4px 0 0;
-            color: #64748b;
-            font-size: 13px;
-          }
-
-          .settings-form {
-            display: grid;
-            gap: 14px;
-          }
-
-          .settings-form label {
-            display: grid;
-            gap: 7px;
-          }
-
-          .settings-save {
-            width: fit-content;
-            min-width: 160px;
-          }
-
-          .settings-password {
-            position: relative;
-          }
-
-          .settings-password input {
-            padding-right: 48px !important;
-          }
-
-          .settings-eye {
-            position: absolute;
-            right: 9px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 34px !important;
-            min-width: 34px !important;
-            min-height: 34px !important;
-            padding: 0 !important;
-            border: 0 !important;
-            background: transparent !important;
-            box-shadow: none !important;
-            display: grid !important;
-            place-items: center !important;
-            font-size: 18px !important;
-          }
-
-          .settings-eye:hover {
-            background: #eef4f9 !important;
-          }
-
-          .settings-success {
-            color: #166534;
-            background: #ecfdf3;
-            border: 1px solid #b7e4c7;
-            border-radius: 8px;
-            padding: 11px 12px;
-            font-size: 14px;
-          }
-
-          .settings-message {
-            margin: 0;
-          }
-
-          .settings-loading {
-            color: #64748b;
-          }
-
-          @media (max-width: 900px) {
-            .settings-grid {
-              grid-template-columns: 1fr;
-            }
-
-            .settings-save {
-              width: 100%;
-            }
-          }
+          .settings-page{display:grid;gap:20px}.settings-heading{border-left:4px solid var(--ga-primary);padding:2px 0 2px 14px}.settings-kicker,.content-head>span{display:block;color:var(--ga-primary);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}.settings-heading h2{margin:3px 0 2px;font-size:29px;line-height:1.15;color:var(--ga-text)}.settings-heading p,.content-head p{margin:4px 0 0;color:var(--ga-text-soft);font-size:13px}.settings-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:16px;align-items:start}.settings-nav,.settings-content{background:#fff;border:1px solid var(--ga-border);border-radius:14px;box-shadow:var(--ga-shadow)}.settings-nav{padding:8px;display:grid;gap:5px}.settings-nav button{width:100%;border:0!important;background:transparent!important;color:var(--ga-text)!important;display:flex!important;align-items:center!important;gap:10px!important;text-align:left;padding:10px 11px!important;min-height:46px!important;box-shadow:none!important}.settings-nav button:hover{background:var(--ga-primary-soft)!important}.settings-nav button.active{background:var(--ga-primary)!important;color:#fff!important}.settings-nav-icon{width:27px;height:27px;display:grid;place-items:center;border-radius:7px;background:rgba(25,118,210,.08)}.settings-nav button.active .settings-nav-icon{background:rgba(255,255,255,.16)}.settings-nav-status{margin-left:auto;width:8px;height:8px;border-radius:50%;background:#94a3b8}.settings-nav-status.online{background:#22c55e}.settings-nav-divider{height:1px;background:var(--ga-border);margin:5px 3px}.settings-content{min-height:430px;padding:20px}.content-head{padding-bottom:17px;border-bottom:1px solid var(--ga-border)}.content-head h3{margin:5px 0 0;font-size:22px;color:var(--ga-text)}.content-box{margin-top:18px;padding:17px;border:1px solid var(--ga-border);border-radius:12px;background:#fff}.settings-form{display:grid;gap:15px}.settings-form.two-cols{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.settings-form label{display:grid;gap:7px}.content-actions{display:flex;justify-content:flex-end;padding-top:18px}.content-actions.left{justify-content:flex-start}.settings-save{min-width:155px}.settings-password{position:relative}.settings-password input{padding-right:48px!important}.settings-eye{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:34px!important;min-width:34px!important;min-height:34px!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;display:grid!important;place-items:center!important}.settings-eye:hover{background:#eef4f9!important}.password-box{max-width:700px}.connection-card{margin-top:18px;border:1px solid var(--ga-border);border-radius:13px;padding:18px;display:flex;align-items:center;gap:15px;background:var(--ga-surface-soft)}.connection-card.connected{border-color:#b9e5ca;background:#f5fcf8}.connection-main{display:flex;align-items:center;gap:14px;flex:1}.connection-logo{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;background:#e9f8ef;color:#137333}.connection-card h4,.automation-box h4{margin:4px 0 2px;font-size:16px;color:var(--ga-text)}.connection-card p,.automation-box p{margin:0;color:var(--ga-text-soft);font-size:13px}.status-label{display:flex;align-items:center;gap:7px;color:#18794e;font-size:10px;font-weight:850;letter-spacing:.08em}.status-label.offline{color:#64748b}.status-dot{width:8px;height:8px;border-radius:50%;background:#22c55e}.status-label.offline .status-dot{background:#94a3b8}.account-chip{padding:8px 11px;border:1px solid #cfe9d8;background:#fff;border-radius:8px;color:#475569;font-size:12px}.automation-box{margin-top:14px;border:1px solid var(--ga-border);border-radius:13px;padding:17px}.automation-head{padding-bottom:13px;border-bottom:1px solid var(--ga-border)}.automation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:13px}.automation-grid>div{display:flex;gap:10px;align-items:flex-start;padding:12px;background:var(--ga-surface-soft);border-radius:9px}.automation-grid b{color:#16a34a}.automation-grid span{display:grid;gap:2px}.automation-grid strong{font-size:13px;color:var(--ga-text)}.automation-grid small{font-size:12px;color:var(--ga-text-soft)}.connection-card.empty{align-items:flex-start}.empty-copy{flex:1}.connect-actions{display:flex;gap:8px;align-self:center}.whatsapp-disconnect{background:#dc2626!important;color:#fff!important;border-color:#dc2626!important}.settings-success{color:#166534;background:#ecfdf3;border:1px solid #b7e4c7;border-radius:8px;padding:11px 12px;font-size:14px}.settings-message{margin:0}.settings-loading,.whatsapp-loading{color:#64748b}.company-section{margin-top:20px}.section-title{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:9px}.section-title h4{margin:0;color:var(--ga-text);font-size:15px}.section-title p{margin:0;color:var(--ga-text-soft);font-size:12px}.content-box.no-top{margin-top:0}.address-grid{grid-template-columns:180px minmax(260px,2fr) 130px minmax(190px,1fr);gap:16px}.address-grid .street-field{grid-column:span 2}.full-field{grid-column:1/-1}
+          @media(max-width:900px){.settings-layout{grid-template-columns:1fr}.settings-nav{grid-template-columns:1fr 1fr 1fr}.settings-nav-divider{display:none}.settings-nav button{justify-content:center!important}.settings-nav-status{display:none}.settings-content{min-height:0}.settings-form.two-cols,.automation-grid,.address-grid{grid-template-columns:1fr}.address-grid .street-field,.full-field{grid-column:auto}.section-title{align-items:flex-start;flex-direction:column;gap:3px}.connection-card{flex-direction:column;align-items:stretch}.connect-actions{align-self:stretch;flex-direction:column}.content-actions .settings-save{width:100%}}
+          @media(max-width:620px){.settings-nav{grid-template-columns:1fr}.settings-nav button{justify-content:flex-start!important}.settings-content{padding:15px}.content-actions{justify-content:stretch}.content-actions button{width:100%}}
         `}</style>
       </AppShell>
     </AuthGuard>

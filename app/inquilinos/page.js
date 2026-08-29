@@ -8,6 +8,7 @@ import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
 import { garantirCobrancaMesAtual, migrarRecebimentoTransferencia, sincronizarEncerramentoContrato, sincronizarValorContratoAberto } from "../../lib/sincronizacao";
+import { abrirWhatsApp } from "../../lib/whatsapp";
 
 const formularioVazio = {
   nome: "",
@@ -354,6 +355,15 @@ export default function Inquilinos() {
     setContratoEditandoId(null);
     setApartamentoAnteriorId(null);
     setModalAberto(true);
+  }
+
+  function conversarNoWhatsApp(inquilino) {
+    const resultado = abrirWhatsApp({
+      telefone: inquilino?.telefone,
+      mensagem: `Olá, ${inquilino?.nome || ""}.`
+    });
+
+    if (!resultado.ok) alert(resultado.erro);
   }
 
   function abrirEditar(inquilino) {
@@ -824,6 +834,12 @@ export default function Inquilinos() {
                       <td>{contrato ? "Cadastrado" : "Sem contrato"}</td>
                       <td>
                         <div className="tenant-action-buttons">
+                          <button
+                            className="secondary tenant-whatsapp"
+                            onClick={() => conversarNoWhatsApp(i)}
+                          >
+                            WhatsApp
+                          </button>
                           <button
                             className="secondary"
                             onClick={() => abrirEditar(i)}

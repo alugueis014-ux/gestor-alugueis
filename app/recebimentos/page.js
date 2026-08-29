@@ -8,6 +8,7 @@ import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { obterEmpresaId } from "../../lib/empresa";
 import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
+import { notificarPagamentoWhatsApp } from "../../lib/whatsapp-client";
 
 
 function moeda(valor) {
@@ -745,6 +746,12 @@ export default function Recebimentos() {
 
       if (error) throw error;
 
+      if (valor >= totalDevido) {
+        notificarPagamentoWhatsApp(modalReceber.id).catch(err =>
+          console.warn("WhatsApp pagamento:", err?.message || err)
+        );
+      }
+
       setModalReceber(null);
       await carregar();
     } catch (e) {
@@ -807,6 +814,12 @@ export default function Recebimentos() {
       .eq("id", modal.id);
 
     if (error) return setErro(error.message);
+
+    if (pago && modal?.status !== "pago") {
+      notificarPagamentoWhatsApp(modal.id).catch(err =>
+        console.warn("WhatsApp pagamento:", err?.message || err)
+      );
+    }
 
     setModal(null);
     await carregar();

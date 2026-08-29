@@ -600,7 +600,6 @@ export default function Configuracoes() {
                         </div>
                       </div>
                     )}
-                  </div>
 
                   {process.env.NEXT_PUBLIC_WHATSAPP_PERMITIR_TESTE === "true" && (
                     <div className="review-test-box">
@@ -623,6 +622,7 @@ export default function Configuracoes() {
                       </div>
                     </div>
                   )}
+                  </div>
                 )}
 
                 {abaAtiva === "seguranca" && (

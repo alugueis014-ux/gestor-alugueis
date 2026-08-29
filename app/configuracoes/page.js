@@ -92,7 +92,11 @@ export default function Configuracoes() {
     try {
       const dados = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
       if (dados?.type !== "WA_EMBEDDED_SIGNUP") return null;
-      if (dados?.event !== "FINISH" && dados?.event !== "FINISH_ONLY_WABA") return null;
+      if (![
+        "FINISH",
+        "FINISH_ONLY_WABA",
+        "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"
+      ].includes(dados?.event)) return null;
       return {
         wabaId: dados?.data?.waba_id || "",
         phoneNumberId: dados?.data?.phone_number_id || ""
@@ -296,7 +300,11 @@ export default function Configuracoes() {
             config_id: configId,
             response_type: "code",
             override_default_response_type: true,
-            extras: { setup: {} }
+            extras: {
+              setup: {},
+              featureType: "whatsapp_business_app_onboarding",
+              sessionInfoVersion: "3"
+            }
           });
         });
       } finally {

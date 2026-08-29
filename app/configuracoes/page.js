@@ -252,7 +252,7 @@ export default function Configuracoes() {
           appId: process.env.NEXT_PUBLIC_META_APP_ID,
           autoLogAppEvents: true,
           xfbml: true,
-          version: process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION || "v25.0"
+          version: process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION || "v26.0"
         });
         resolve(window.FB);
       };
@@ -303,7 +303,8 @@ export default function Configuracoes() {
             extras: {
               setup: {},
               featureType: "whatsapp_business_app_onboarding",
-              sessionInfoVersion: "3"
+              sessionInfoVersion: "3",
+              version: "v4"
             }
           });
         });

@@ -116,6 +116,7 @@ export default function Apartamentos() {
           .from("apartamentos")
           .select("*, predios!inner(nome,endereco,arquivado)")
           .eq("empresa_id", id)
+          .eq("arquivado", false)
           .eq("predios.arquivado", false)
           .order("numero"),
         supabase
@@ -169,6 +170,7 @@ export default function Apartamentos() {
         .eq("empresa_id", id)
         .eq("predio_id", form.predio_id)
         .eq("numero", form.numero.trim())
+        .eq("arquivado", false)
         .limit(1)
         .maybeSingle();
 
@@ -194,20 +196,41 @@ export default function Apartamentos() {
   }
 
   async function excluir(id) {
-    if (!confirm("Excluir apartamento?")) return;
+    if (!confirm("Excluir apartamento?\n\nEle sairá da lista, mas o histórico de contratos e relatórios será preservado.")) return;
 
     try {
+      setErro("");
       const idEmpresa = empresaId || await obterEmpresaId();
 
+      const { data: contratoAtivo, error: contratoError } = await supabase
+        .from("contratos")
+        .select("id")
+        .eq("empresa_id", idEmpresa)
+        .eq("apartamento_id", id)
+        .eq("status", "ativo")
+        .limit(1)
+        .maybeSingle();
+
+      if (contratoError) throw contratoError;
+
+      if (contratoAtivo) {
+        throw new Error(
+          "Este apartamento possui contrato ativo. Encerre o contrato antes de excluí-lo."
+        );
+      }
+
+      // Exclusão lógica: o apartamento deixa de aparecer no cadastro,
+      // mas continua no banco para manter contratos, recebimentos e relatórios antigos.
       const { error } = await supabase
         .from("apartamentos")
-        .delete()
+        .update({ arquivado: true })
         .eq("id", id)
         .eq("empresa_id", idEmpresa);
 
       if (error) throw error;
 
       await carregar(idEmpresa);
+      notificarAtualizacao("apartamentos-contratos");
     } catch (e) {
       setErro(e.message || "Não foi possível excluir o apartamento.");
     }
@@ -256,6 +279,7 @@ export default function Apartamentos() {
         .eq("empresa_id", idEmpresa)
         .eq("predio_id", formEditar.predio_id)
         .eq("numero", formEditar.numero.trim())
+        .eq("arquivado", false)
         .neq("id", modalEditar.id)
         .limit(1)
         .maybeSingle();

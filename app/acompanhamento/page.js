@@ -156,6 +156,7 @@ export default function Acompanhamento() {
         .eq("empresa_id", empresaId)
         .eq("contratos.empresa_id", empresaId)
         .eq("competencia", competencia)
+        .neq("status", "cancelado")
         .order("data_vencimento");
 
       if (error) throw error;
@@ -217,7 +218,7 @@ export default function Acompanhamento() {
     }
   }
 
-  const linhas = useMemo(() => recebimentos.map(r => ({
+  const linhasBase = useMemo(() => recebimentos.map(r => ({
     ...r,
     statusExibido: statusReal(r),
     atraso: diasAtraso(r),
@@ -227,11 +228,16 @@ export default function Acompanhamento() {
     predio: r.contratos?.apartamentos?.predios
   })).filter(r => {
     const texto = [r.inquilino?.nome,r.apartamento?.numero,r.predio?.nome,r.inquilino?.telefone].join(" ").toLowerCase();
-    return (!predio || r.predio?.id === predio) && (!status || r.statusExibido === status) && texto.includes(busca.toLowerCase());
+    return (!predio || r.predio?.id === predio) && texto.includes(busca.toLowerCase());
   }).sort((a,b) => {
     const ordem={Atrasado:1,Pendente:2,Pago:3,Cancelado:4};
     return ordem[a.statusExibido]-ordem[b.statusExibido] || b.atraso-a.atraso || String(a.predio?.nome).localeCompare(String(b.predio?.nome));
-  }), [recebimentos,predio,status,busca]);
+  }), [recebimentos,predio,busca]);
+
+  const linhas = useMemo(
+    () => linhasBase.filter(r => !status || r.statusExibido === status),
+    [linhasBase, status]
+  );
 
   const grupos = useMemo(() => {
     const mapa = new Map();
@@ -254,9 +260,13 @@ export default function Acompanhamento() {
     );
   }, [linhas]);
 
-  const pagos = linhas.filter(x => x.statusExibido === "Pago").length;
-  const pendentes = linhas.filter(x => x.statusExibido === "Pendente").length;
-  const atrasados = linhas.filter(x => x.statusExibido === "Atrasado").length;
+  const pagos = linhasBase.filter(x => x.statusExibido === "Pago").length;
+  const pendentes = linhasBase.filter(x => x.statusExibido === "Pendente").length;
+  const atrasados = linhasBase.filter(x => x.statusExibido === "Atrasado").length;
+
+  function filtrarPorCard(novoStatus) {
+    setStatus(novoStatus);
+  }
 
   function abrirReceber(r) {
     setErro("");
@@ -358,10 +368,38 @@ export default function Acompanhamento() {
       <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar inquilino ou apartamento" />
     </div>
     <div className="tracking-cards">
-      <div><span>Total de apartamentos</span><strong>{linhas.length}</strong></div>
-      <div><span>Pagos</span><strong>{pagos}</strong></div>
-      <div><span>Pendentes</span><strong>{pendentes}</strong></div>
-      <div><span>Atrasados</span><strong>{atrasados}</strong></div>
+      <button
+        type="button"
+        className={`tracking-card-button ${status === "" ? "active" : ""}`}
+        onClick={() => filtrarPorCard("")}
+      >
+        <span>Total de apartamentos</span>
+        <strong>{linhasBase.length}</strong>
+      </button>
+      <button
+        type="button"
+        className={`tracking-card-button ${status === "Pago" ? "active" : ""}`}
+        onClick={() => filtrarPorCard("Pago")}
+      >
+        <span>Pagos</span>
+        <strong>{pagos}</strong>
+      </button>
+      <button
+        type="button"
+        className={`tracking-card-button ${status === "Pendente" ? "active" : ""}`}
+        onClick={() => filtrarPorCard("Pendente")}
+      >
+        <span>Pendentes</span>
+        <strong>{pendentes}</strong>
+      </button>
+      <button
+        type="button"
+        className={`tracking-card-button ${status === "Atrasado" ? "active" : ""}`}
+        onClick={() => filtrarPorCard("Atrasado")}
+      >
+        <span>Atrasados</span>
+        <strong>{atrasados}</strong>
+      </button>
     </div>
     {erro&&<div className="error">{erro}</div>}
     {carregando&&<div className="tracking-table-wrap"><div className="empty-row">Carregando...</div></div>}
@@ -378,6 +416,35 @@ export default function Acompanhamento() {
       </section>)}
     </div>}
     <style jsx>{`
+      .tracking-card-button{
+        appearance:none;
+        width:100%;
+        border:1px solid #dbe3ee;
+        background:#fff;
+        color:inherit;
+        text-align:left;
+        font:inherit;
+        cursor:pointer;
+        border-radius:12px;
+        padding:16px;
+        transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+      }
+      .tracking-card-button:hover{
+        transform:translateY(-2px);
+        box-shadow:0 6px 18px rgba(15,23,42,.08);
+        border-color:#93c5fd;
+      }
+      .tracking-card-button.active{
+        border-color:#258cf4;
+        box-shadow:0 0 0 2px rgba(37,140,244,.12);
+      }
+      .tracking-card-button span{
+        display:block;
+      }
+      .tracking-card-button strong{
+        display:block;
+        margin-top:4px;
+      }
       .tracking-buildings{display:grid;gap:18px}
       .tracking-building{background:#fff;border:1px solid #dbe3ee;border-radius:12px;overflow:hidden}
       .tracking-building-head{padding:14px 16px 10px;border-bottom:1px solid #e5eaf1}

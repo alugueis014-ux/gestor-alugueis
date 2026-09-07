@@ -52,8 +52,9 @@ export default function Disponiveis() {
           .order("nome"),
         supabase
           .from("apartamentos")
-          .select("id,numero,situacao,observacoes,predio_id,predios!inner(nome,endereco,arquivado)")
+          .select("id,numero,situacao,observacoes,predio_id,arquivado,predios!inner(nome,endereco,arquivado)")
           .eq("empresa_id", empresaId)
+          .eq("arquivado", false)
           .eq("predios.arquivado", false)
           .order("numero"),
         supabase

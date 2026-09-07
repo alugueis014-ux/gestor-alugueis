@@ -12,6 +12,7 @@ const vazio = {
   nome: "",
   endereco: "",
   observacoes: "",
+  imovel_principal_id: "",
   apartamentos: [""]
 };
 
@@ -72,6 +73,7 @@ export default function Predios() {
       nome: p.nome,
       endereco: p.endereco || "",
       observacoes: p.observacoes || "",
+      imovel_principal_id: p.imovel_principal_id || "",
       apartamentos: [""]
     });
     setErro("");
@@ -145,6 +147,7 @@ export default function Predios() {
         nome: form.nome.trim(),
         endereco: form.endereco.trim() || null,
         observacoes: form.observacoes.trim() || null,
+        imovel_principal_id: form.imovel_principal_id || null,
         empresa_id: empresaId
       };
 
@@ -197,6 +200,7 @@ export default function Predios() {
       setEditando(null);
       setForm(vazio);
       await carregar();
+      notificarAtualizacao("imoveis");
     } catch (e) {
       setErro(e.message || "Não foi possível salvar o imóvel.");
     } finally {
@@ -452,6 +456,15 @@ export default function Predios() {
     }
   }
 
+  const nomeImovelPrincipal = (p) => {
+    if (!p?.imovel_principal_id) return "";
+    return lista.find(item => item.id === p.imovel_principal_id)?.nome || "";
+  };
+
+  const opcoesImovelPrincipal = lista.filter(
+    p => p.id !== editando && !p.imovel_principal_id
+  );
+
   return (
     <AuthGuard>
       <AppShell>
@@ -502,6 +515,7 @@ export default function Predios() {
               <tr>
                 <th>Nome</th>
                 <th>Endereço</th>
+                <th>Imóvel físico</th>
                 <th>Ações</th>
               </tr>
             </thead>
@@ -511,6 +525,25 @@ export default function Predios() {
                 <tr key={p.id}>
                   <td>{p.nome}</td>
                   <td>{p.endereco || "—"}</td>
+                  <td>
+                    {p.imovel_principal_id ? (
+                      <span style={{
+                        display: "inline-flex",
+                        padding: "5px 9px",
+                        borderRadius: 999,
+                        background: "#eef6ff",
+                        color: "#1456a0",
+                        fontSize: 12,
+                        fontWeight: 700
+                      }}>
+                        Mesmo imóvel: {nomeImovelPrincipal(p) || "principal"}
+                      </span>
+                    ) : (
+                      <span style={{ color: "#64748b", fontSize: 12 }}>
+                        Principal
+                      </span>
+                    )}
+                  </td>
                   <td>
                     {mostrarArquivados ? (
                       <button className="primary" onClick={() => restaurar(p)}>
@@ -579,6 +612,27 @@ export default function Predios() {
                         setForm({ ...form, endereco: e.target.value })
                       }
                     />
+                  </label>
+
+                  <label className="tenant-full">
+                    Mesmo imóvel físico que
+                    <select
+                      value={form.imovel_principal_id}
+                      onChange={(e) =>
+                        setForm({ ...form, imovel_principal_id: e.target.value })
+                      }
+                    >
+                      <option value="">Não — este é um imóvel independente</option>
+                      {opcoesImovelPrincipal.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}{p.endereco ? ` — ${p.endereco}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <small style={{ marginTop: 5, color: "#64748b", fontWeight: 400 }}>
+                      Use esta opção quando duas entradas ou endereços pertencem ao mesmo prédio físico.
+                      Eles continuam separados para apartamentos e endereços, mas contam como um único imóvel.
+                    </small>
                   </label>
 
                   <label className="tenant-full">

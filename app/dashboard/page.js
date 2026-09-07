@@ -81,7 +81,7 @@ export default function Dashboard() {
       const [p, a, i, r, atraso] = await Promise.all([
         supabase
           .from("predios")
-          .select("id,nome,endereco")
+          .select("id,nome,endereco,imovel_principal_id")
           .eq("empresa_id", empresaId)
           .eq("arquivado", false)
           .order("nome"),
@@ -94,6 +94,8 @@ export default function Dashboard() {
             predio_id,
             numero,
             situacao,
+            arquivado,
+            predios!inner(id,arquivado),
             contratos(
               status,
               empresa_id,
@@ -101,11 +103,21 @@ export default function Dashboard() {
             )
           `)
           .eq("empresa_id", empresaId)
+          .eq("arquivado", false)
+          .eq("predios.arquivado", false)
           .order("numero"),
 
         supabase
           .from("inquilinos")
-          .select("id,status")
+          .select(`
+            id,
+            status,
+            contratos(
+              id,
+              empresa_id,
+              status
+            )
+          `)
           .eq("empresa_id", empresaId),
 
         supabase
@@ -231,12 +243,30 @@ export default function Dashboard() {
         normalizarTransferenciasRecebimentos(atraso.data || []);
 
       const atrasadosUnicos = Array.from(
-        atrasosTransferenciaNormalizados.reduce((mapa, item) => {
-          const apartamentoId = item.contratos?.apartamento_id || item.id;
-          const chave = `${apartamentoId}|${item.competencia || item.data_vencimento || ""}`;
-          if (!mapa.has(chave)) mapa.set(chave, item);
-          return mapa;
-        }, new Map()).values()
+        atrasosTransferenciaNormalizados
+          .filter(item => {
+            const previsto = Number(item.valor_previsto || 0);
+            const recebido = Number(item.valor_recebido || 0);
+            const status = String(item.status || "").toLowerCase();
+
+            return (
+              status !== "pago" &&
+              status !== "cancelado" &&
+              recebido < previsto
+            );
+          })
+          .reduce((mapa, item) => {
+            const apartamentoId =
+              item.contratos?.apartamento_id ||
+              item.contratos?.apartamentos?.id ||
+              item.id;
+
+            const chave = `${apartamentoId}|${item.competencia || item.data_vencimento || ""}`;
+
+            if (!mapa.has(chave)) mapa.set(chave, item);
+            return mapa;
+          }, new Map())
+          .values()
       );
 
       setPredios(p.data || []);
@@ -254,8 +284,34 @@ export default function Dashboard() {
     }
   }
 
-  const disponiveis = apartamentos.filter(a => a.situacao === "disponivel").length;
-  const inquilinosAtivos = inquilinos.filter(i => i.status === "ativo").length;
+  // Mesma regra usada em "Disponíveis para Aluguel":
+  // reserva/manutenção respeitam o cadastro manual; nos demais casos,
+  // contrato ativo define se a unidade está ocupada.
+  // O card "Apartamentos" mostra somente unidades operacionais:
+  // apartamento não arquivado + imóvel não arquivado.
+  // Essa filtragem já é feita na consulta acima.
+  const totalApartamentosAtivos = apartamentos.length;
+
+  const disponiveis = apartamentos.filter(a => {
+    if (a.situacao === "reservado" || a.situacao === "manutencao") return false;
+
+    const temContratoAtivo = (a.contratos || []).some(
+      contrato => String(contrato.status || "").toLowerCase() === "ativo"
+    );
+
+    return !temContratoAtivo;
+  }).length;
+  const inquilinosAtivos = inquilinos.filter(i => {
+    const contratos = i.contratos || [];
+    if (contratos.length > 0) {
+      return contratos.some(
+        contrato => String(contrato.status || "").toLowerCase() === "ativo"
+      );
+    }
+
+    // Compatibilidade com cadastros antigos sem relação carregada.
+    return String(i.status || "").toLowerCase() === "ativo";
+  }).length;
 
   const resumo = useMemo(() => {
     const porPredio = new Map(
@@ -297,12 +353,15 @@ export default function Dashboard() {
       const previsto = Number(recebimento.valor_previsto || 0);
       const recebido = Number(recebimento.valor_recebido || 0);
       const pendente = Math.max(0, previsto - recebido);
+      const pago =
+        String(recebimento.status || "").toLowerCase() === "pago" ||
+        (previsto > 0 && recebido >= previsto);
 
       item.previsto += previsto;
       item.recebido += recebido;
       item.pendente += pendente;
 
-      if (recebimento.status === "pago") item.pagos += 1;
+      if (pago) item.pagos += 1;
       else item.emAberto += 1;
     }
 
@@ -533,6 +592,11 @@ export default function Dashboard() {
     }));
   }
 
+  const totalImoveisFisicos = useMemo(
+    () => new Set(predios.map(p => p.imovel_principal_id || p.id)).size,
+    [predios]
+  );
+
   return (
     <AuthGuard>
       <AppShell>
@@ -630,7 +694,7 @@ export default function Dashboard() {
 
           <Link href="/predios" className="dashboard-card dashboard-card-link">
             <span>Imóveis</span>
-            <strong>{valorPrivado(predios.length)}</strong>
+            <strong>{valorPrivado(totalImoveisFisicos)}</strong>
             <small>Ver imóveis →</small>
           </Link>
         </div>
@@ -638,7 +702,7 @@ export default function Dashboard() {
         <div className="dashboard-cards second-row">
           <Link href="/apartamentos" className="dashboard-card dashboard-card-link">
             <span>Apartamentos</span>
-            <strong>{valorPrivado(apartamentos.length)}</strong>
+            <strong>{valorPrivado(totalApartamentosAtivos)}</strong>
             <small>Ver apartamentos →</small>
           </Link>
 

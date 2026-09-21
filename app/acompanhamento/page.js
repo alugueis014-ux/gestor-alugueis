@@ -167,6 +167,7 @@ export default function Acompanhamento() {
         `)
         .eq("empresa_id", empresaId)
         .eq("contratos.empresa_id", empresaId)
+        .eq("contratos.status", "ativo")
         .eq("competencia", competencia)
         .neq("status", "cancelado")
         .order("data_vencimento");

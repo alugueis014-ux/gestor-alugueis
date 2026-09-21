@@ -35,6 +35,7 @@ export default function Inquilinos() {
   const [modalAberto, setModalAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [busca, setBusca] = useState("");
+  const [mostrarInativos, setMostrarInativos] = useState(false);
   const [erro, setErro] = useState("");
   const [empresaId, setEmpresaId] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
@@ -163,6 +164,15 @@ export default function Inquilinos() {
     const texto = [i.nome, i.cpf, i.telefone].join(" ").toLowerCase();
     return texto.includes(busca.toLowerCase());
   });
+
+  const inativos = useMemo(() => {
+    const termo = busca.toLowerCase();
+
+    return lista
+      .filter(i => i.status === "inativo")
+      .filter(i => [i.nome, i.cpf, i.telefone].join(" ").toLowerCase().includes(termo))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
+  }, [lista, busca]);
 
   const inquilinosPorPredio = useMemo(() => {
     const grupos = new Map();
@@ -408,6 +418,25 @@ export default function Inquilinos() {
     setEditandoId(inquilino.id);
     setContratoEditandoId(contrato?.id || null);
     setApartamentoAnteriorId(contrato?.apartamento_id || null);
+    setModalAberto(true);
+  }
+
+  function abrirNovoContratoInquilino(inquilino) {
+    setForm({
+      ...formularioVazio,
+      nome: inquilino.nome || "",
+      cpf: inquilino.cpf || "",
+      telefone: inquilino.telefone || "",
+      email: inquilino.email || "",
+      observacoes: inquilino.observacoes || "",
+      data_inicio: new Date().toISOString().slice(0, 10),
+      status: "ativo"
+    });
+    setArquivo(null);
+    setErro("");
+    setEditandoId(inquilino.id);
+    setContratoEditandoId(null);
+    setApartamentoAnteriorId(null);
     setModalAberto(true);
   }
 
@@ -728,6 +757,9 @@ export default function Inquilinos() {
   async function alternar(inquilino) {
     const novoStatus = inquilino.status === "ativo" ? "inativo" : "ativo";
     const contratoAtivo = (inquilino.contratos || []).find(c => c.status === "ativo");
+    const ultimoContratoEncerrado = [...(inquilino.contratos || [])]
+      .filter(c => c.status === "encerrado")
+      .sort((a, b) => String(b.data_inicio || "").localeCompare(String(a.data_inicio || "")))[0];
     const dataSaida = new Date().toISOString().slice(0, 10);
 
     setErro("");
@@ -735,6 +767,61 @@ export default function Inquilinos() {
     try {
       const idEmpresa = empresaId || await obterEmpresaId();
       setEmpresaId(idEmpresa);
+
+      if (novoStatus === "ativo") {
+        if (!ultimoContratoEncerrado) {
+          throw new Error("Este inquilino não possui contrato anterior para reativar.");
+        }
+
+        const { data: ocupacao, error: ocupacaoError } = await supabase
+          .from("contratos")
+          .select("id")
+          .eq("empresa_id", idEmpresa)
+          .eq("apartamento_id", ultimoContratoEncerrado.apartamento_id)
+          .eq("status", "ativo")
+          .neq("id", ultimoContratoEncerrado.id)
+          .limit(1);
+
+        if (ocupacaoError) throw ocupacaoError;
+        if (ocupacao?.length) {
+          throw new Error(
+            "O apartamento do contrato anterior já está ocupado. Use Novo contrato e escolha outro apartamento."
+          );
+        }
+
+        const { error: reabrirError } = await supabase
+          .from("contratos")
+          .update({ status: "ativo", data_fim: null })
+          .eq("id", ultimoContratoEncerrado.id)
+          .eq("empresa_id", idEmpresa);
+        if (reabrirError) throw reabrirError;
+
+        const hoje = new Date().toISOString().slice(0, 10);
+        const { error: atrasadosError } = await supabase
+          .from("recebimentos")
+          .update({ status: "atrasado", atualizado_em: new Date().toISOString() })
+          .eq("empresa_id", idEmpresa)
+          .eq("contrato_id", ultimoContratoEncerrado.id)
+          .eq("status", "cancelado")
+          .lt("data_vencimento", hoje);
+        if (atrasadosError) throw atrasadosError;
+
+        const { error: pendentesError } = await supabase
+          .from("recebimentos")
+          .update({ status: "pendente", atualizado_em: new Date().toISOString() })
+          .eq("empresa_id", idEmpresa)
+          .eq("contrato_id", ultimoContratoEncerrado.id)
+          .eq("status", "cancelado")
+          .gte("data_vencimento", hoje);
+        if (pendentesError) throw pendentesError;
+
+        const { error: apartamentoError } = await supabase
+          .from("apartamentos")
+          .update({ situacao: "ocupado" })
+          .eq("id", ultimoContratoEncerrado.apartamento_id)
+          .eq("empresa_id", idEmpresa);
+        if (apartamentoError) throw apartamentoError;
+      }
 
       const { error } = await supabase
         .from("inquilinos")
@@ -776,6 +863,13 @@ export default function Inquilinos() {
         if (apartamentoError) throw apartamentoError;
       }
 
+      if (novoStatus === "ativo" && ultimoContratoEncerrado) {
+        await garantirCobrancaMesAtual({
+          empresaId: idEmpresa,
+          contratoId: ultimoContratoEncerrado.id
+        });
+      }
+
       await carregarTudo(idEmpresa);
     } catch (err) {
       setErro(err.message || "Não foi possível alterar o status do inquilino.");
@@ -787,9 +881,19 @@ export default function Inquilinos() {
       <AppShell>
         <div className="tenant-page-header">
           <h2>Inquilinos</h2>
-          <button className="primary tenant-new-button" onClick={abrirNovo}>
-            Novo inquilino
-          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setMostrarInativos(valor => !valor)}
+            >
+              {mostrarInativos ? "Ocultar inquilinos inativos" : "Inquilinos inativos"}
+              {` (${inativos.length})`}
+            </button>
+            <button className="primary tenant-new-button" onClick={abrirNovo}>
+              Novo inquilino
+            </button>
+          </div>
         </div>
 
         <div className="tenant-search-row">
@@ -801,6 +905,68 @@ export default function Inquilinos() {
         </div>
 
         {erro && !modalAberto && <div className="error">{erro}</div>}
+
+        {mostrarInativos && (
+          <div className="panel table-wrap tenant-table-panel" style={{ marginBottom: 18 }}>
+            {inativos.length === 0 ? (
+              <div className="empty-row" style={{ padding: 18 }}>
+                Nenhum inquilino inativo encontrado.
+              </div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Último apartamento</th>
+                    <th>Inquilino</th>
+                    <th>Telefone</th>
+                    <th>Último aluguel</th>
+                    <th>Status</th>
+                    <th>Contrato</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inativos.map(i => {
+                    const ultimoContrato = [...(i.contratos || [])]
+                      .sort((a, b) => String(b.data_inicio || "").localeCompare(String(a.data_inicio || "")))[0];
+
+                    return (
+                      <tr key={i.id}>
+                        <td>{ultimoContrato?.apartamentos?.numero || "-"}</td>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{i.nome}</div>
+                          {i.cpf && (
+                            <div style={{ color: "#64748b", fontSize: 13 }}>CPF: {i.cpf}</div>
+                          )}
+                        </td>
+                        <td>{i.telefone || "-"}</td>
+                        <td>
+                          {ultimoContrato?.valor_aluguel != null
+                            ? Number(ultimoContrato.valor_aluguel).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL"
+                              })
+                            : "-"}
+                        </td>
+                        <td><span className="badge inativo">Inativo</span></td>
+                        <td>Encerrado</td>
+                        <td>
+                          <div className="tenant-action-buttons">
+                            <button className="secondary" onClick={() => conversarNoWhatsApp(i)}>WhatsApp</button>
+                            <button className="secondary" onClick={() => abrirEditar(i)}>Editar</button>
+                            <button className="secondary" onClick={() => alternar(i)}>Reativar contrato anterior</button>
+                            <button className="primary" onClick={() => abrirNovoContratoInquilino(i)}>Novo contrato</button>
+                            <button className="danger" onClick={() => excluirInquilino(i)}>Excluir</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
         <div style={{ display: "grid", gap: 18 }}>
           {inquilinosPorPredio.length === 0 && (
@@ -921,6 +1087,7 @@ export default function Inquilinos() {
               </table>
             </div>
           ))}
+
         </div>
 
 

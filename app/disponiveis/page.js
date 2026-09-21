@@ -7,7 +7,7 @@ import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { obterEmpresaId } from "../../lib/empresa";
-import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
+import { assinarAtualizacoes, garantirCobrancaMesAtual, notificarAtualizacao } from "../../lib/sincronizacao";
 
 const rotulos = {
   disponivel: "Disponível",
@@ -20,6 +20,15 @@ export default function Disponiveis() {
   const [predios, setPredios] = useState([]);
   const [apartamentos, setApartamentos] = useState([]);
   const [contratosAtivos, setContratosAtivos] = useState([]);
+  const [inquilinosInativos, setInquilinosInativos] = useState([]);
+  const [apartamentoSelecionado, setApartamentoSelecionado] = useState(null);
+  const [salvandoContrato, setSalvandoContrato] = useState(false);
+  const [formContrato, setFormContrato] = useState({
+    inquilino_id: "",
+    valor_aluguel: "",
+    dia_vencimento: "",
+    data_inicio: new Date().toISOString().slice(0, 10)
+  });
   const [predio, setPredio] = useState("");
   const [situacao, setSituacao] = useState("disponivel");
   const [busca, setBusca] = useState("");
@@ -43,7 +52,7 @@ export default function Disponiveis() {
     try {
       const empresaId = await obterEmpresaId();
 
-      const [p, a, c] = await Promise.all([
+      const [p, a, c, i] = await Promise.all([
         supabase
           .from("predios")
           .select("id,nome,endereco")
@@ -61,20 +70,28 @@ export default function Disponiveis() {
           .from("contratos")
           .select("id,apartamento_id,status,data_inicio,data_fim")
           .eq("empresa_id", empresaId)
-          .eq("status", "ativo")
+          .eq("status", "ativo"),
+        supabase
+          .from("inquilinos")
+          .select("id,nome,cpf,telefone,status,contratos(valor_aluguel,dia_vencimento,data_inicio,status)")
+          .eq("empresa_id", empresaId)
+          .eq("status", "inativo")
+          .order("nome")
       ]);
 
-      const falha = p.error || a.error || c.error;
+      const falha = p.error || a.error || c.error || i.error;
       if (falha) throw falha;
 
       setPredios(p.data || []);
       setApartamentos(a.data || []);
       setContratosAtivos(c.data || []);
+      setInquilinosInativos(i.data || []);
     } catch (e) {
       setErro(e.message || "Não foi possível carregar os imóveis disponíveis.");
       setPredios([]);
       setApartamentos([]);
       setContratosAtivos([]);
+      setInquilinosInativos([]);
     } finally {
       setCarregando(false);
     }
@@ -141,6 +158,111 @@ export default function Disponiveis() {
 
     return Array.from(grupos.values()).filter(g => g.apartamentos.length > 0);
   }, [predios, filtrados]);
+
+  function abrirEscolhaInquilino(apartamento) {
+    setErro("");
+    setApartamentoSelecionado(apartamento);
+    setFormContrato({
+      inquilino_id: "",
+      valor_aluguel: "",
+      dia_vencimento: "",
+      data_inicio: new Date().toISOString().slice(0, 10)
+    });
+  }
+
+  function selecionarInquilinoInativo(inquilinoId) {
+    const inquilino = inquilinosInativos.find(i => i.id === inquilinoId);
+    const ultimoContrato = [...(inquilino?.contratos || [])]
+      .sort((a, b) => String(b.data_inicio || "").localeCompare(String(a.data_inicio || "")))[0];
+
+    setFormContrato(form => ({
+      ...form,
+      inquilino_id: inquilinoId,
+      valor_aluguel: ultimoContrato?.valor_aluguel ?? "",
+      dia_vencimento: ultimoContrato?.dia_vencimento ?? ""
+    }));
+  }
+
+  async function criarContratoParaInativo(e) {
+    e.preventDefault();
+
+    if (!apartamentoSelecionado || !formContrato.inquilino_id) {
+      return setErro("Selecione um inquilino inativo.");
+    }
+    if (!formContrato.valor_aluguel || Number(formContrato.valor_aluguel) <= 0) {
+      return setErro("Informe o valor do aluguel.");
+    }
+    if (
+      !formContrato.dia_vencimento ||
+      Number(formContrato.dia_vencimento) < 1 ||
+      Number(formContrato.dia_vencimento) > 31
+    ) {
+      return setErro("Informe um dia de vencimento entre 1 e 31.");
+    }
+    if (!formContrato.data_inicio) return setErro("Informe a data de início.");
+
+    setSalvandoContrato(true);
+    setErro("");
+
+    try {
+      const empresaId = await obterEmpresaId();
+
+      const { data: ocupado, error: ocupadoError } = await supabase
+        .from("contratos")
+        .select("id")
+        .eq("empresa_id", empresaId)
+        .eq("apartamento_id", apartamentoSelecionado.id)
+        .eq("status", "ativo")
+        .limit(1);
+
+      if (ocupadoError) throw ocupadoError;
+      if (ocupado?.length) throw new Error("Este apartamento acabou de ser ocupado.");
+
+      const { data: contrato, error: contratoError } = await supabase
+        .from("contratos")
+        .insert({
+          empresa_id: empresaId,
+          inquilino_id: formContrato.inquilino_id,
+          predio_id: apartamentoSelecionado.predio_id,
+          apartamento_id: apartamentoSelecionado.id,
+          valor_aluguel: Number(formContrato.valor_aluguel),
+          dia_vencimento: Number(formContrato.dia_vencimento),
+          data_inicio: formContrato.data_inicio,
+          data_fim: null,
+          status: "ativo"
+        })
+        .select("id")
+        .single();
+
+      if (contratoError) throw contratoError;
+
+      const { error: inquilinoError } = await supabase
+        .from("inquilinos")
+        .update({ status: "ativo", data_saida: null })
+        .eq("id", formContrato.inquilino_id)
+        .eq("empresa_id", empresaId);
+      if (inquilinoError) throw inquilinoError;
+
+      const { error: apartamentoError } = await supabase
+        .from("apartamentos")
+        .update({ situacao: "ocupado" })
+        .eq("id", apartamentoSelecionado.id)
+        .eq("empresa_id", empresaId);
+      if (apartamentoError) throw apartamentoError;
+
+      await garantirCobrancaMesAtual({ empresaId, contratoId: contrato.id });
+      notificarAtualizacao("novo-contrato-inquilino-inativo", {
+        inquilinoId: formContrato.inquilino_id,
+        apartamentoId: apartamentoSelecionado.id
+      });
+      setApartamentoSelecionado(null);
+      await carregar();
+    } catch (e) {
+      setErro(e.message || "Não foi possível criar o novo contrato.");
+    } finally {
+      setSalvandoContrato(false);
+    }
+  }
 
   return (
     <AuthGuard>
@@ -280,9 +402,10 @@ export default function Disponiveis() {
                         {a.observacoes && <small>{a.observacoes}</small>}
                       </div>
 
-                      <a
+                      <button
+                        type="button"
                         className="primary available-action"
-                        href="/inquilinos"
+                        onClick={() => abrirEscolhaInquilino(a)}
                         style={{
                           width: 180,
                           maxWidth: "100%",
@@ -292,13 +415,100 @@ export default function Disponiveis() {
                           alignSelf: "flex-start"
                         }}
                       >
-                        Cadastrar inquilino
-                      </a>
+                        Adicionar inquilino
+                      </button>
                     </article>
                   ))}
                 </div>
               </section>
             ))}
+          </div>
+        )}
+
+        {apartamentoSelecionado && (
+          <div
+            className="modal-overlay"
+            onMouseDown={e => {
+              if (e.target === e.currentTarget && !salvandoContrato) setApartamentoSelecionado(null);
+            }}
+          >
+            <div className="modal-box" style={{ maxWidth: 560 }}>
+              <div className="modal-header">
+                <div>
+                  <h3 style={{ margin: 0 }}>Adicionar inquilino</h3>
+                  <div style={{ color: "#64748b", marginTop: 4 }}>
+                    Apartamento {apartamentoSelecionado.numero} — {apartamentoSelecionado.predios?.nome}
+                  </div>
+                </div>
+                <button type="button" className="modal-close" onClick={() => setApartamentoSelecionado(null)}>×</button>
+              </div>
+
+              <form onSubmit={criarContratoParaInativo}>
+                <label>Selecionar inquilino desativado</label>
+                <select
+                  value={formContrato.inquilino_id}
+                  onChange={e => selecionarInquilinoInativo(e.target.value)}
+                >
+                  <option value="">Selecione...</option>
+                  {inquilinosInativos.map(i => (
+                    <option key={i.id} value={i.id}>
+                      {i.nome}{i.cpf ? ` — CPF ${i.cpf}` : ""}
+                    </option>
+                  ))}
+                </select>
+
+                {inquilinosInativos.length === 0 && (
+                  <div className="empty-row" style={{ padding: "12px 0" }}>
+                    Nenhum inquilino desativado disponível.
+                  </div>
+                )}
+
+                <div className="grid-2">
+                  <div>
+                    <label>Valor do aluguel</label>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={formContrato.valor_aluguel}
+                      onChange={e => setFormContrato({ ...formContrato, valor_aluguel: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label>Dia do vencimento</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={formContrato.dia_vencimento}
+                      onChange={e => setFormContrato({ ...formContrato, dia_vencimento: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <label>Data de início</label>
+                <input
+                  type="date"
+                  value={formContrato.data_inicio}
+                  onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })}
+                />
+
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #dbe5ef" }}>
+                  <a className="secondary" href="/inquilinos" style={{ display: "inline-block" }}>
+                    Cadastrar pessoa nova
+                  </a>
+                </div>
+
+                <div className="modal-actions">
+                  <button type="button" className="secondary" disabled={salvandoContrato} onClick={() => setApartamentoSelecionado(null)}>
+                    Cancelar
+                  </button>
+                  <button type="submit" className="primary" disabled={salvandoContrato || !inquilinosInativos.length}>
+                    {salvandoContrato ? "Salvando..." : "Criar novo contrato"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
       </AppShell>

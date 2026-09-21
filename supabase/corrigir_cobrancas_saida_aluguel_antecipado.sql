@@ -3,8 +3,8 @@
 -- considerando que o aluguel é pago antecipadamente.
 --
 -- Mantém pagamentos realizados e todo o histórico.
--- Cancela somente cobranças não pagas com vencimento na data da saída
--- ou depois dela.
+-- Cancela somente cobranças sem nenhum valor recebido, com vencimento
+-- na data da saída ou depois dela. Pagamentos parciais são preservados.
 
 update public.recebimentos r
 set
@@ -17,4 +17,4 @@ where c.id = r.contrato_id
   and c.data_fim is not null
   and r.data_vencimento >= c.data_fim
   and coalesce(r.status, '') <> 'pago'
-  and coalesce(r.valor_recebido, 0) < coalesce(r.valor_previsto, 0);
+  and coalesce(r.valor_recebido, 0) = 0;

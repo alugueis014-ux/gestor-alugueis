@@ -174,7 +174,7 @@ export default function Relatorios() {
 
       /*
         Evita duplicidade histórica:
-        contabiliza apenas um recebimento por apartamento + competência.
+        contabiliza apenas um recebimento por contrato + competência.
         Pago tem prioridade, depois contrato ativo, maior valor recebido
         e, por último, contrato mais recente.
       */
@@ -196,12 +196,7 @@ export default function Relatorios() {
       const normalizados = normalizarTransferenciasRecebimentos(rec.data || []);
 
       for (const item of normalizados) {
-        const apartamentoId =
-          item.contratos?.apartamento_id ||
-          item.contratos?.apartamentos?.id ||
-          item.id;
-
-        const chave = `${apartamentoId}|${item.competencia}`;
+        const chave = `${item.contrato_id || item.contratos?.id || item.id}|${item.competencia}`;
         const atual = mapa.get(chave);
 
         if (!atual || pontuar(item) > pontuar(atual)) {

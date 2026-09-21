@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
-import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
+import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao, vencimentoDaCompetencia } from "../../lib/sincronizacao";
 import { abrirWhatsApp } from "../../lib/whatsapp";
 import { notificarPagamentoWhatsApp } from "../../lib/whatsapp-client";
 
@@ -29,12 +29,6 @@ function moeda(valor) {
 }
 
 function hojeISO() { return new Date().toISOString().slice(0, 10); }
-
-function vencimentoDaCompetencia(competencia, dia) {
-  const [ano, mes] = competencia.split("-").map(Number);
-  const ultimoDia = new Date(ano, mes, 0).getDate();
-  return `${ano}-${String(mes).padStart(2,"0")}-${String(Math.min(Number(dia), ultimoDia)).padStart(2,"0")}`;
-}
 
 function statusReal(r) {
   const previsto = Number(r.valor_previsto || 0);
@@ -71,13 +65,27 @@ export default function Acompanhamento() {
     forma_pagamento: "pix"
   });
 
-  useEffect(() => { prepararMes(); }, [mes]);
+  useEffect(() => { carregarMesSelecionado(); }, [mes]);
 
   useEffect(() => {
     return assinarAtualizacoes(() => {
-      prepararMes();
+      carregarMesSelecionado();
     });
   }, [mes]);
+
+  async function carregarMesSelecionado() {
+    const hoje = new Date();
+    const mesAtual = `${hoje.getFullYear()}-${String(
+      hoje.getMonth() + 1
+    ).padStart(2, "0")}`;
+
+    if (mes === mesAtual) {
+      await prepararMes();
+      return;
+    }
+
+    await carregarRecebimentos();
+  }
 
   async function prepararMes() {
     setCarregando(true); setErro("");
@@ -113,7 +121,11 @@ export default function Acompanhamento() {
           empresa_id: empresaId,
           contrato_id: x.id,
           competencia,
-          data_vencimento: vencimentoDaCompetencia(mes, x.dia_vencimento),
+          data_vencimento: vencimentoDaCompetencia(
+            competencia,
+            x.dia_vencimento,
+            x.data_inicio
+          ),
           valor_previsto: Number(x.valor_aluguel),
           status: "pendente"
         }));
@@ -162,7 +174,7 @@ export default function Acompanhamento() {
       if (error) throw error;
 
       // Registros antigos podem conter um Pago e outro Pendente
-      // para o mesmo apartamento no mesmo mês.
+      // para o mesmo contrato no mesmo mês.
       // O Acompanhamento deve mostrar somente UMA cobrança.
       const mapa = new Map();
 
@@ -196,12 +208,7 @@ export default function Acompanhamento() {
       const dadosNormalizados = normalizarTransferenciasRecebimentos(data || []);
 
       for (const item of dadosNormalizados) {
-        const apartamentoId =
-          item.contratos?.apartamento_id ||
-          item.contratos?.apartamentos?.id ||
-          item.id;
-
-        const chave = `${apartamentoId}|${item.competencia}`;
+        const chave = `${item.contrato_id || item.contratos?.id || item.id}|${item.competencia}`;
         const atual = mapa.get(chave);
 
         if (!atual || pontuar(item) > pontuar(atual)) {
@@ -269,10 +276,20 @@ export default function Acompanhamento() {
   }
 
   function abrirReceber(r) {
+    const totalDevido =
+      Number(r.valor_previsto || 0) +
+      Number(r.multa || 0) +
+      Number(r.juros || 0) -
+      Number(r.desconto || 0);
+    const saldoAberto = Math.max(
+      0,
+      totalDevido - Number(r.valor_recebido || 0)
+    );
+
     setErro("");
     setModalReceber(r);
     setFormReceber({
-      valor_recebido: String(r.valor_previsto || ""),
+      valor_recebido: String(saldoAberto),
       data_pagamento: hojeISO(),
       forma_pagamento: "pix"
     });
@@ -282,8 +299,8 @@ export default function Acompanhamento() {
     e.preventDefault();
     if (!modalReceber) return;
 
-    const valor = Number(formReceber.valor_recebido || 0);
-    if (valor <= 0) {
+    const valorParcela = Number(formReceber.valor_recebido || 0);
+    if (valorParcela <= 0) {
       return setErro("Informe o valor recebido.");
     }
     if (!formReceber.data_pagamento) {
@@ -294,22 +311,32 @@ export default function Acompanhamento() {
     setErro("");
 
     try {
+      const totalDevido =
+        Number(modalReceber.valor_previsto || 0) +
+        Number(modalReceber.multa || 0) +
+        Number(modalReceber.juros || 0) -
+        Number(modalReceber.desconto || 0);
+      const novoValorRecebido =
+        Number(modalReceber.valor_recebido || 0) + valorParcela;
+
       const { error } = await supabase
         .from("recebimentos")
         .update({
-          valor_recebido: valor,
+          valor_recebido: novoValorRecebido,
           data_pagamento: formReceber.data_pagamento,
           forma_pagamento: formReceber.forma_pagamento || null,
-          status: "pago",
+          status: novoValorRecebido >= totalDevido ? "pago" : "pendente",
           atualizado_em: new Date().toISOString()
         })
         .eq("id", modalReceber.id);
 
       if (error) throw error;
 
-      notificarPagamentoWhatsApp(modalReceber.id).catch(err =>
-        console.warn("WhatsApp pagamento:", err?.message || err)
-      );
+      if (novoValorRecebido >= totalDevido) {
+        notificarPagamentoWhatsApp(modalReceber.id).catch(err =>
+          console.warn("WhatsApp pagamento:", err?.message || err)
+        );
+      }
 
       setModalReceber(null);
       await carregarRecebimentos();

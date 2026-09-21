@@ -38,6 +38,15 @@ export async function GET(request) {
   const templateHoje = process.env.WHATSAPP_TEMPLATE_VENCIMENTO_HOJE || "aluguel_vencimento_hoje";
   const templateAtraso = process.env.WHATSAPP_TEMPLATE_ATRASO_5_DIAS || "aluguel_atrasado_5_dias";
 
+  // Garante que os lembretes não dependam de alguém abrir o painel no mês.
+  const { error: gerarError } = await supabase.rpc("gerar_cobrancas_mes_atual");
+  if (gerarError) {
+    return NextResponse.json(
+      { ok: false, erro: `Não foi possível gerar as cobranças do mês: ${gerarError.message}` },
+      { status: 500 }
+    );
+  }
+
   const { data: recebimentos, error } = await supabase
     .from("recebimentos")
     .select(`

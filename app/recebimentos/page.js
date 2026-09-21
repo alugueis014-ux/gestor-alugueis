@@ -7,7 +7,7 @@ import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { obterEmpresaId } from "../../lib/empresa";
-import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
+import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao, vencimentoDaCompetencia } from "../../lib/sincronizacao";
 import { notificarPagamentoWhatsApp } from "../../lib/whatsapp-client";
 
 
@@ -20,14 +20,6 @@ function moeda(valor) {
 
 function hojeISO() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function vencimentoDaCompetencia(competencia, dia) {
-  const [ano, mes] = competencia.split("-").map(Number);
-  const ultimoDia = new Date(ano, mes, 0).getDate();
-  return `${ano}-${String(mes).padStart(2, "0")}-${String(
-    Math.min(Number(dia), ultimoDia)
-  ).padStart(2, "0")}`;
 }
 
 function statusExibido(recebimento) {
@@ -202,25 +194,30 @@ export default function Recebimentos() {
   });
 
   useEffect(() => {
+    carregarMesSelecionado();
+  }, [mes]);
+
+  useEffect(() => {
+    return assinarAtualizacoes(() => {
+      carregarMesSelecionado();
+    });
+  }, [mes]);
+
+  async function carregarMesSelecionado() {
     const agora = new Date();
     const mesAtual = `${agora.getFullYear()}-${String(
       agora.getMonth() + 1
     ).padStart(2, "0")}`;
 
     // Só gera automaticamente as cobranças do mês atual.
-    // Mês futuro pode ser consultado, mas não será criado antes do dia 1º.
+    // Meses anteriores e futuros são apenas consultados.
     if (mes === mesAtual) {
-      prepararMes();
-    } else {
-      carregar();
+      await prepararMes();
+      return;
     }
-  }, [mes]);
 
-  useEffect(() => {
-    return assinarAtualizacoes(() => {
-      prepararMes();
-    });
-  }, [mes]);
+    await carregar();
+  }
 
   async function prepararMes() {
     setCarregando(true);
@@ -279,7 +276,11 @@ export default function Recebimentos() {
           empresa_id: empresaId,
           contrato_id: c.id,
           competencia: `${mes}-01`,
-          data_vencimento: vencimentoDaCompetencia(mes, c.dia_vencimento),
+          data_vencimento: vencimentoDaCompetencia(
+            `${mes}-01`,
+            c.dia_vencimento,
+            c.data_inicio
+          ),
           valor_previsto: Number(c.valor_aluguel),
           valor_recebido: 0,
           multa: 0,
@@ -336,7 +337,7 @@ export default function Recebimentos() {
       if (error) throw error;
 
       // Evita duplicidade antiga na tela de Recebimentos.
-      // Para o mesmo apartamento + competência:
+      // Para o mesmo contrato + competência:
       // 1) se houver pago, mantém o pago;
       // 2) caso contrário, prioriza contrato ativo;
       // 3) em empate, prioriza contrato com início mais recente.
@@ -345,12 +346,7 @@ export default function Recebimentos() {
       const dadosNormalizados = normalizarTransferenciasRecebimentos(data || []);
 
       for (const r of dadosNormalizados) {
-        const apartamentoId =
-          r.contratos?.apartamentos?.id ||
-          r.contratos?.apartamento_id ||
-          r.id;
-
-        const chave = `${apartamentoId}|${r.competencia}`;
+        const chave = `${r.contrato_id || r.contratos?.id || r.id}|${r.competencia}`;
         const atual = mapa.get(chave);
 
         if (!atual) {
@@ -478,12 +474,22 @@ export default function Recebimentos() {
   }, [linhasFiltradas]);
 
   function abrirReceber(r, opcoes = {}) {
+    const totalDevido =
+      Number(r.valor_previsto || 0) +
+      Number(r.multa || 0) +
+      Number(r.juros || 0) -
+      Number(r.desconto || 0);
+    const saldoAberto = Math.max(
+      0,
+      totalDevido - Number(r.valor_recebido || 0)
+    );
+
     setErro("");
     setModalVoz(null);
     setModalReceber(r);
     setFormReceber({
       valor_recebido: String(
-        opcoes.valor_recebido ?? r.valor_previsto ?? ""
+        opcoes.valor_recebido ?? saldoAberto ?? ""
       ),
       data_pagamento: opcoes.data_pagamento || hojeISO(),
       forma_pagamento: opcoes.forma_pagamento || "pix"
@@ -708,8 +714,8 @@ export default function Recebimentos() {
     e.preventDefault();
     if (!modalReceber) return;
 
-    const valor = Number(formReceber.valor_recebido || 0);
-    if (valor <= 0) {
+    const valorParcela = Number(formReceber.valor_recebido || 0);
+    if (valorParcela <= 0) {
       return setErro("Informe o valor recebido.");
     }
     if (!formReceber.data_pagamento) {
@@ -722,9 +728,13 @@ export default function Recebimentos() {
       Number(modalReceber.juros || 0) -
       Number(modalReceber.desconto || 0);
 
-    if (valor > totalDevido) {
+    const valorJaRecebido = Number(modalReceber.valor_recebido || 0);
+    const novoValorRecebido = valorJaRecebido + valorParcela;
+    const saldoAberto = Math.max(0, totalDevido - valorJaRecebido);
+
+    if (valorParcela > saldoAberto) {
       const confirmarMaior = confirm(
-        `O valor recebido (${moeda(valor)}) é maior que o valor devido (${moeda(totalDevido)}). Deseja registrar mesmo assim?`
+        `O valor recebido (${moeda(valorParcela)}) é maior que o saldo em aberto (${moeda(saldoAberto)}). Deseja registrar mesmo assim?`
       );
       if (!confirmarMaior) return;
     }
@@ -736,17 +746,17 @@ export default function Recebimentos() {
       const { error } = await supabase
         .from("recebimentos")
         .update({
-          valor_recebido: valor,
+          valor_recebido: novoValorRecebido,
           data_pagamento: formReceber.data_pagamento,
           forma_pagamento: formReceber.forma_pagamento || null,
-          status: valor >= totalDevido ? "pago" : "pendente",
+          status: novoValorRecebido >= totalDevido ? "pago" : "pendente",
           atualizado_em: new Date().toISOString()
         })
         .eq("id", modalReceber.id);
 
       if (error) throw error;
 
-      if (valor >= totalDevido) {
+      if (novoValorRecebido >= totalDevido) {
         notificarPagamentoWhatsApp(modalReceber.id).catch(err =>
           console.warn("WhatsApp pagamento:", err?.message || err)
         );
@@ -849,7 +859,20 @@ export default function Recebimentos() {
   }
 
   async function excluirTodos() {
-    if (lista.length === 0) return;
+    const excluiveis = lista.filter(r => {
+      const previsto = Number(r.valor_previsto || 0);
+      const recebido = Number(r.valor_recebido || 0);
+      return (
+        r.status !== "pago" &&
+        !(previsto > 0 && recebido >= previsto) &&
+        recebido === 0
+      );
+    });
+
+    if (excluiveis.length === 0) {
+      setErro("Não há cobranças sem pagamento que possam ser excluídas neste mês.");
+      return;
+    }
 
     const competencia = `${mes}-01`;
     const mesFormatado = mes.split("-").reverse().join("/");
@@ -857,7 +880,8 @@ export default function Recebimentos() {
     if (
       !confirm(
         `Excluir TODAS as cobranças de ${mesFormatado}?\n\n` +
-        `Serão excluídos ${lista.length} recebimento(s), inclusive os que estiverem pagos.\n` +
+        `Serão excluídas ${excluiveis.length} cobrança(s) sem pagamento.\n` +
+        `Pagamentos e recebimentos parciais serão preservados.\n` +
         `Esta ação não pode ser desfeita.`
       )
     ) {
@@ -870,7 +894,8 @@ export default function Recebimentos() {
       .from("recebimentos")
       .delete()
       .eq("empresa_id", empresaId)
-      .eq("competencia", competencia);
+      .eq("competencia", competencia)
+      .in("id", excluiveis.map(r => r.id));
 
     if (error) {
       setErro(error.message);
@@ -881,6 +906,20 @@ export default function Recebimentos() {
   }
 
   async function excluir(r) {
+    const previsto = Number(r.valor_previsto || 0);
+    const recebido = Number(r.valor_recebido || 0);
+
+    if (
+      r.status === "pago" ||
+      recebido > 0 ||
+      (previsto > 0 && recebido >= previsto)
+    ) {
+      setErro(
+        "Pagamentos e recebimentos parciais não podem ser excluídos. Use estorno quando necessário."
+      );
+      return;
+    }
+
     if (!confirm(`Excluir definitivamente esta cobrança de ${r.inquilino?.nome || "inquilino"}?`)) {
       return;
     }

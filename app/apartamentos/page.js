@@ -379,7 +379,7 @@ export default function Apartamentos() {
         throw new Error("Este apartamento já possui um contrato ativo.");
       }
 
-      const { error: novoContratoError } = await supabase
+      const { data: novoContrato, error: novoContratoError } = await supabase
         .from("contratos")
         .insert({
           empresa_id: idEmpresa,
@@ -390,9 +390,16 @@ export default function Apartamentos() {
           data_inicio: formContrato.data_inicio,
           data_fim: formContrato.data_fim || null,
           status: "ativo"
-        });
+        })
+        .select("id")
+        .single();
 
       if (novoContratoError) throw novoContratoError;
+
+      await garantirCobrancaMesAtual({
+        empresaId: idEmpresa,
+        contratoId: novoContrato.id
+      });
 
       const { error: aptError } = await supabase
         .from("apartamentos")

@@ -495,6 +495,11 @@ export default function Inquilinos() {
       let contratoId = contratoEditandoId;
 
       if (dadosContratoCompletos) {
+        const dataFimEncerramento =
+          form.status === "inativo"
+            ? form.data_saida || form.data_fim || new Date().toISOString().slice(0, 10)
+            : form.data_fim || null;
+
         const dadosContrato = {
           empresa_id: idEmpresa,
           inquilino_id: inquilinoId,
@@ -503,7 +508,7 @@ export default function Inquilinos() {
           valor_aluguel: Number(form.valor_aluguel),
           dia_vencimento: Number(form.dia_vencimento),
           data_inicio: form.data_inicio,
-          data_fim: form.data_fim || null,
+          data_fim: dataFimEncerramento,
           status: form.status === "ativo" ? "ativo" : "encerrado"
         };
 
@@ -544,6 +549,14 @@ export default function Inquilinos() {
           });
         }
 
+        if (form.status === "inativo" && contratoId) {
+          await sincronizarEncerramentoContrato({
+            empresaId: idEmpresa,
+            contratoId,
+            dataFim: dataFimEncerramento
+          });
+        }
+
         if (
           apartamentoAnteriorId &&
           apartamentoAnteriorId !== form.apartamento_id
@@ -563,14 +576,25 @@ export default function Inquilinos() {
           .eq("id", form.apartamento_id)
           .eq("empresa_id", idEmpresa);
       } else if (contratoEditandoId && form.status === "inativo") {
-        await supabase
+        const dataFimEncerramento =
+          form.data_saida || form.data_fim || new Date().toISOString().slice(0, 10);
+
+        const { error: encerrarError } = await supabase
           .from("contratos")
           .update({
             status: "encerrado",
-            data_fim: form.data_saida || form.data_fim || new Date().toISOString().slice(0, 10)
+            data_fim: dataFimEncerramento
           })
           .eq("id", contratoEditandoId)
           .eq("empresa_id", idEmpresa);
+
+        if (encerrarError) throw encerrarError;
+
+        await sincronizarEncerramentoContrato({
+          empresaId: idEmpresa,
+          contratoId: contratoEditandoId,
+          dataFim: dataFimEncerramento
+        });
 
         if (apartamentoAnteriorId) {
           await supabase
@@ -704,6 +728,7 @@ export default function Inquilinos() {
   async function alternar(inquilino) {
     const novoStatus = inquilino.status === "ativo" ? "inativo" : "ativo";
     const contratoAtivo = (inquilino.contratos || []).find(c => c.status === "ativo");
+    const dataSaida = new Date().toISOString().slice(0, 10);
 
     setErro("");
 
@@ -716,7 +741,7 @@ export default function Inquilinos() {
         .update({
           status: novoStatus,
           data_saida: novoStatus === "inativo"
-            ? new Date().toISOString().slice(0, 10)
+            ? dataSaida
             : null
         })
         .eq("id", inquilino.id)
@@ -729,12 +754,18 @@ export default function Inquilinos() {
           .from("contratos")
           .update({
             status: "encerrado",
-            data_fim: new Date().toISOString().slice(0, 10)
+            data_fim: dataSaida
           })
           .eq("id", contratoAtivo.id)
           .eq("empresa_id", idEmpresa);
 
         if (contratoError) throw contratoError;
+
+        await sincronizarEncerramentoContrato({
+          empresaId: idEmpresa,
+          contratoId: contratoAtivo.id,
+          dataFim: dataSaida
+        });
 
         const { error: apartamentoError } = await supabase
           .from("apartamentos")

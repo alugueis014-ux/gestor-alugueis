@@ -213,12 +213,7 @@ export default function Dashboard() {
         };
 
         for (const item of lista) {
-          const apartamentoId =
-            item.contratos?.apartamento_id ||
-            item.contratos?.apartamentos?.id ||
-            item.id;
-
-          const chave = `${apartamentoId}|${item.competencia || ""}`;
+          const chave = `${item.contrato_id || item.contratos?.id || item.id}|${item.competencia || ""}`;
           const atual = mapa.get(chave);
 
           if (!atual || pontuar(item) > pontuar(atual)) {
@@ -231,7 +226,7 @@ export default function Dashboard() {
 
       // Primeiro remove a duplicidade causada por TRANSFERÊNCIA:
       // contrato encerrado + novo contrato do mesmo inquilino na mesma data.
-      // Depois aplica a deduplicação normal por apartamento + competência.
+      // Depois aplica a deduplicação normal por contrato + competência.
       const recebimentosTransferenciaNormalizados =
         normalizarTransferenciasRecebimentos(r.data || []);
 
@@ -256,12 +251,7 @@ export default function Dashboard() {
             );
           })
           .reduce((mapa, item) => {
-            const apartamentoId =
-              item.contratos?.apartamento_id ||
-              item.contratos?.apartamentos?.id ||
-              item.id;
-
-            const chave = `${apartamentoId}|${item.competencia || item.data_vencimento || ""}`;
+            const chave = `${item.contrato_id || item.contratos?.id || item.id}|${item.competencia || item.data_vencimento || ""}`;
 
             if (!mapa.has(chave)) mapa.set(chave, item);
             return mapa;
@@ -430,8 +420,8 @@ export default function Dashboard() {
     // Se já recebeu o valor total, não mostra novamente mesmo que o status
     // antigo do registro esteja inconsistente.
     // Regra global do Recebimento Rápido:
-    // para cada apartamento + competência, se existir QUALQUER cobrança já paga,
-    // nenhuma cobrança pendente duplicada desse mesmo apartamento/mês pode aparecer.
+    // para cada contrato + competência, se existir QUALQUER cobrança já paga,
+    // nenhuma cobrança pendente duplicada desse mesmo contrato/mês pode aparecer.
     const chavesPagas = new Set(
       recebimentos
         .filter(r => {
@@ -441,11 +431,7 @@ export default function Dashboard() {
           return status === "pago" || (previsto > 0 && recebido >= previsto);
         })
         .map(r => {
-          const apartamentoId =
-            r.contratos?.apartamentos?.id ||
-            r.contratos?.apartamento_id ||
-            "";
-          return `${apartamentoId}|${r.competencia}`;
+          return `${r.contrato_id || r.contratos?.id || r.id}|${r.competencia}`;
         })
     );
 
@@ -453,11 +439,7 @@ export default function Dashboard() {
       const status = String(r.status || "").toLowerCase();
       const previsto = Number(r.valor_previsto || 0);
       const recebido = Number(r.valor_recebido || 0);
-      const apartamentoId =
-        r.contratos?.apartamentos?.id ||
-        r.contratos?.apartamento_id ||
-        "";
-      const chave = `${apartamentoId}|${r.competencia}`;
+      const chave = `${r.contrato_id || r.contratos?.id || r.id}|${r.competencia}`;
 
       return (
         status !== "pago" &&

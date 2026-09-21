@@ -158,6 +158,8 @@ export default function Inquilinos() {
   }, [predios, apartamentos, form.apartamento_id]);
 
   const filtrados = lista.filter(i => {
+    if (i.status !== "ativo") return false;
+
     const texto = [i.nome, i.cpf, i.telefone].join(" ").toLowerCase();
     return texto.includes(busca.toLowerCase());
   });
@@ -170,9 +172,9 @@ export default function Inquilinos() {
     });
 
     filtrados.forEach((inquilino) => {
-      const contrato =
-        (inquilino.contratos || []).find(c => c.status === "ativo") ||
-        (inquilino.contratos || [])[0];
+      const contrato = (inquilino.contratos || []).find(
+        c => c.status === "ativo"
+      );
 
       const predioId = contrato?.apartamentos?.predio_id || "sem-predio";
       const predioNome =
@@ -192,9 +194,23 @@ export default function Inquilinos() {
       grupos.get(predioId).inquilinos.push({ inquilino, contrato });
     });
 
-    return Array.from(grupos.values()).filter(
-      grupo => grupo.inquilinos.length > 0
-    );
+    return Array.from(grupos.values())
+      .filter(grupo => grupo.inquilinos.length > 0)
+      .map(grupo => ({
+        ...grupo,
+        inquilinos: [...grupo.inquilinos].sort((a, b) => {
+          const apartamentoA =
+            a.contrato?.apartamentos?.numero || "Sem apartamento";
+          const apartamentoB =
+            b.contrato?.apartamentos?.numero || "Sem apartamento";
+
+          return String(apartamentoA).localeCompare(
+            String(apartamentoB),
+            "pt-BR",
+            { numeric: true, sensitivity: "base" }
+          );
+        })
+      }));
   }, [predios, filtrados]);
 
   const apartamentosDisponiveisTransferencia = useMemo(() => {
@@ -759,7 +775,7 @@ export default function Inquilinos() {
           {inquilinosPorPredio.length === 0 && (
             <div className="panel table-wrap tenant-table-panel">
               <div className="empty-row" style={{ padding: 18 }}>
-                Nenhum inquilino cadastrado.
+                Nenhum inquilino ativo encontrado.
               </div>
             </div>
           )}

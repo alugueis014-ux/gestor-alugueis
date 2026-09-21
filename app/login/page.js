@@ -179,6 +179,7 @@ export default function Login() {
 
         <form
           className="auth-form"
+          autoComplete="on"
           onSubmit={
             modo === "entrar"
               ? entrar
@@ -217,10 +218,13 @@ export default function Login() {
             E-mail
             <input
               type="email"
+              id="login-email"
+              name="username"
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="seuemail@exemplo.com"
-              autoComplete="email"
+              autoComplete={modo === "entrar" ? "username" : "email"}
+              inputMode="email"
               required
             />
           </label>
@@ -231,6 +235,8 @@ export default function Login() {
               <div className="password-field">
                 <input
                   type={mostrarSenha ? "text" : "password"}
+                  id="login-password"
+                  name="password"
                   value={senha}
                   onChange={e => setSenha(e.target.value)}
                   placeholder="Digite sua senha"

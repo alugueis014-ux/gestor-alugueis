@@ -43,6 +43,9 @@ export default function Inquilinos() {
   const [apartamentoAnteriorId, setApartamentoAnteriorId] = useState(null);
   const [modalTransferencia, setModalTransferencia] = useState(null);
   const [transferindo, setTransferindo] = useState(false);
+  const [modalHistorico, setModalHistorico] = useState(null);
+  const [historicoPagamentos, setHistoricoPagamentos] = useState([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
   const [formTransferencia, setFormTransferencia] = useState({
     predio_id: "",
     apartamento_id: "",
@@ -390,6 +393,78 @@ export default function Inquilinos() {
     });
 
     if (!resultado.ok) alert(resultado.erro);
+  }
+
+  function moeda(valor) {
+    return Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function dataBR(data) {
+    if (!data) return "-";
+    return new Date(`${String(data).slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR");
+  }
+
+  function statusPagamento(item) {
+    const previsto = Number(item.valor_previsto || 0) + Number(item.multa || 0) +
+      Number(item.juros || 0) - Number(item.desconto || 0);
+    const recebido = Number(item.valor_recebido || 0);
+    if (item.status === "pago" || (previsto > 0 && recebido >= previsto)) return "Pago";
+    if (recebido > 0) return "Parcial";
+    return new Date().toISOString().slice(0, 10) > item.data_vencimento ? "Atrasado" : "Pendente";
+  }
+
+  async function abrirHistoricoPagamentos(inquilino) {
+    setModalHistorico(inquilino);
+    setHistoricoPagamentos([]);
+    setCarregandoHistorico(true);
+    setErro("");
+
+    try {
+      const idEmpresa = empresaId || await obterEmpresaId();
+      const { data, error } = await supabase
+        .from("recebimentos")
+        .select(`
+          id, competencia, data_vencimento, data_pagamento, valor_previsto,
+          valor_recebido, multa, juros, desconto, forma_pagamento, status,
+          contratos!inner(
+            inquilino_id,
+            apartamentos(numero, predios(nome,endereco))
+          )
+        `)
+        .eq("empresa_id", idEmpresa)
+        .eq("contratos.inquilino_id", inquilino.id)
+        .neq("status", "cancelado")
+        .order("data_vencimento", { ascending: false });
+
+      if (error) throw error;
+      setHistoricoPagamentos(data || []);
+    } catch (err) {
+      setErro(err.message || "Não foi possível carregar o histórico de pagamentos.");
+    } finally {
+      setCarregandoHistorico(false);
+    }
+  }
+
+  function emitirReciboHistorico(item) {
+    const recebido = Number(item.valor_recebido || 0);
+    if (recebido <= 0) return alert("Este pagamento ainda não possui valor recebido.");
+
+    const apartamento = item.contratos?.apartamentos;
+    const predio = apartamento?.predios;
+    const competencia = String(item.competencia || "").slice(0, 7).split("-").reverse().join("/");
+    const janela = window.open("", "_blank");
+    if (!janela) return;
+
+    janela.document.write(`
+      <html><head><title>Recibo de aluguel</title>
+      <style>body{font-family:Arial,sans-serif;padding:45px;line-height:1.65;color:#111}h2{text-align:center;margin-bottom:35px}.linha{margin-top:80px;border-top:1px solid #111;width:320px;text-align:center}@media print{button{display:none}}</style>
+      </head><body><h2>RECIBO DE ALUGUEL</h2>
+      <p>Recebi de <b>${modalHistorico?.nome || ""}</b> a quantia de <b>${moeda(recebido)}</b>, referente ao aluguel do imóvel <b>${predio?.nome || "-"}</b>, apartamento <b>${apartamento?.numero || "-"}</b>, competência <b>${competencia}</b>.</p>
+      <p>Data do pagamento: <b>${dataBR(item.data_pagamento)}</b>.</p>
+      <p>Forma de pagamento: <b>${item.forma_pagamento || "Não informada"}</b>.</p>
+      <div class="linha">LOCADOR</div><script>window.print()<\/script></body></html>
+    `);
+    janela.document.close();
   }
 
   function abrirEditar(inquilino) {
@@ -954,6 +1029,7 @@ export default function Inquilinos() {
                           <div className="tenant-action-buttons">
                             <button className="secondary" onClick={() => conversarNoWhatsApp(i)}>WhatsApp</button>
                             <button className="secondary" onClick={() => abrirEditar(i)}>Editar</button>
+                            <button className="secondary" onClick={() => abrirHistoricoPagamentos(i)}>Histórico</button>
                             <button className="secondary" onClick={() => alternar(i)}>Reativar contrato anterior</button>
                             <button className="primary" onClick={() => abrirNovoContratoInquilino(i)}>Novo contrato</button>
                             <button className="danger" onClick={() => excluirInquilino(i)}>Excluir</button>
@@ -1058,6 +1134,12 @@ export default function Inquilinos() {
                             onClick={() => abrirEditar(i)}
                           >
                             Editar
+                          </button>
+                          <button
+                            className="secondary"
+                            onClick={() => abrirHistoricoPagamentos(i)}
+                          >
+                            Histórico
                           </button>
                           {i.status === "ativo" && contrato?.status === "ativo" && (
                             <button
@@ -1315,6 +1397,91 @@ export default function Inquilinos() {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {modalHistorico && (
+          <div
+            className="tenant-modal-backdrop"
+            onMouseDown={e => {
+              if (e.target === e.currentTarget) setModalHistorico(null);
+            }}
+          >
+            <div className="tenant-modal" style={{ maxWidth: 1050 }}>
+              <div className="tenant-modal-title">
+                <div>
+                  <h3>Histórico de pagamentos</h3>
+                  <div style={{ color: "#64748b", marginTop: 4 }}>{modalHistorico.nome}</div>
+                </div>
+                <button type="button" className="modal-close" onClick={() => setModalHistorico(null)}>×</button>
+              </div>
+
+              <div className="tenant-modal-body">
+                {carregandoHistorico ? (
+                  <div className="empty-row" style={{ padding: 20 }}>Carregando pagamentos...</div>
+                ) : historicoPagamentos.length === 0 ? (
+                  <div className="empty-row" style={{ padding: 20 }}>Nenhum pagamento encontrado.</div>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                      <div className="panel" style={{ padding: 12, minWidth: 190 }}>
+                        <div style={{ color: "#64748b", fontSize: 13 }}>Total recebido</div>
+                        <strong style={{ fontSize: 20 }}>
+                          {moeda(historicoPagamentos.reduce((soma, item) => soma + Number(item.valor_recebido || 0), 0))}
+                        </strong>
+                      </div>
+                      <div className="panel" style={{ padding: 12, minWidth: 190 }}>
+                        <div style={{ color: "#64748b", fontSize: 13 }}>Pagamentos registrados</div>
+                        <strong style={{ fontSize: 20 }}>
+                          {historicoPagamentos.filter(item => Number(item.valor_recebido || 0) > 0).length}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="table-wrap" style={{ overflowX: "auto" }}>
+                      <table style={{ minWidth: 900 }}>
+                        <thead>
+                          <tr>
+                            <th>Competência</th><th>Imóvel/Apto</th><th>Vencimento</th>
+                            <th>Previsto</th><th>Recebido</th><th>Pagamento</th>
+                            <th>Forma</th><th>Status</th><th>Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {historicoPagamentos.map(item => {
+                            const apt = item.contratos?.apartamentos;
+                            const predioHistorico = apt?.predios;
+                            const situacao = statusPagamento(item);
+                            return (
+                              <tr key={item.id}>
+                                <td>{String(item.competencia || "").slice(0, 7).split("-").reverse().join("/")}</td>
+                                <td>{predioHistorico?.nome || "-"} / {apt?.numero || "-"}</td>
+                                <td>{dataBR(item.data_vencimento)}</td>
+                                <td>{moeda(item.valor_previsto)}</td>
+                                <td>{moeda(item.valor_recebido)}</td>
+                                <td>{dataBR(item.data_pagamento)}</td>
+                                <td>{item.forma_pagamento || "-"}</td>
+                                <td><span className={`badge ${situacao.toLowerCase()}`}>{situacao}</span></td>
+                                <td>
+                                  {Number(item.valor_recebido || 0) > 0 ? (
+                                    <button className="secondary" onClick={() => emitirReciboHistorico(item)}>Recibo</button>
+                                  ) : "-"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+                {erro && <div className="error tenant-modal-error">{erro}</div>}
+              </div>
+
+              <div className="tenant-modal-actions">
+                <button type="button" className="secondary" onClick={() => setModalHistorico(null)}>Fechar</button>
+              </div>
+            </div>
           </div>
         )}
 

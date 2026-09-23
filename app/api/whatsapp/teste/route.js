@@ -12,8 +12,11 @@ async function enviarMensagem({ apiVersion, phoneNumberId, token, telefone }) {
     body: JSON.stringify({
       messaging_product: "whatsapp",
       to: telefone,
-      type: "template",
-      template: { name: "hello_world", language: { code: "en_US" } }
+      type: "text",
+      text: {
+        preview_url: false,
+        body: "Mensagem de teste enviada com sucesso pelo Aluguel Fácil."
+      }
     })
   });
   const json = await resposta.json().catch(() => ({}));

@@ -147,6 +147,23 @@ async function assinarWebhookDaWaba(wabaId, accessToken) {
   }
 }
 
+async function registrarNumero(phoneNumberId, accessToken) {
+  const pin = String(process.env.WHATSAPP_TWO_STEP_PIN || "").trim();
+  if (!/^\d{6}$/.test(pin)) return;
+
+  const { apiVersion } = configuracaoMeta();
+  const resposta = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/register`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", pin }),
+    cache: "no-store"
+  });
+  const json = await resposta.json().catch(() => ({}));
+  if (!resposta.ok && Number(json?.error?.code) !== 133005) {
+    throw new Error(json?.error?.message || "Não foi possível registrar o número na Cloud API.");
+  }
+}
+
 export async function GET(request) {
   const contexto = await obterUsuarioEEmpresa(request);
   if (!contexto) return NextResponse.json({ ok: false, erro: "Não autorizado." }, { status: 401 });
@@ -209,6 +226,7 @@ export async function POST(request) {
       info = await descobrirNumero(phoneNumberId, accessToken);
     }
 
+    await registrarNumero(phoneNumberId, accessToken);
     await assinarWebhookDaWaba(wabaId, accessToken);
 
     const agora = new Date().toISOString();

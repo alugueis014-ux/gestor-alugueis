@@ -5,6 +5,38 @@ import {
   normalizarTelefoneMeta
 } from "../../../../lib/whatsapp-server";
 
+async function enviarMensagem({ apiVersion, phoneNumberId, token, telefone }) {
+  const resposta = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: telefone,
+      type: "template",
+      template: { name: "hello_world", language: { code: "en_US" } }
+    })
+  });
+  const json = await resposta.json().catch(() => ({}));
+  return { resposta, json };
+}
+
+async function registrarNumero({ apiVersion, phoneNumberId, token }) {
+  const pin = String(process.env.WHATSAPP_TWO_STEP_PIN || "").trim();
+  if (!/^\d{6}$/.test(pin)) {
+    throw new Error("Configure WHATSAPP_TWO_STEP_PIN com um PIN de 6 dígitos.");
+  }
+
+  const resposta = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/register`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", pin })
+  });
+  const json = await resposta.json().catch(() => ({}));
+  if (!resposta.ok) {
+    throw new Error(json?.error?.message || `Não foi possível registrar o número (HTTP ${resposta.status}).`);
+  }
+}
+
 export async function POST(request) {
   try {
     if (process.env.WHATSAPP_PERMITIR_CONEXAO_TESTE !== "true") {
@@ -30,18 +62,11 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, erro: "A empresa ainda não conectou um WhatsApp." }, { status: 400 });
     }
 
-    const resposta = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: telefone,
-        type: "template",
-        template: { name: "hello_world", language: { code: "en_US" } }
-      })
-    });
-
-    const json = await resposta.json().catch(() => ({}));
+    let { resposta, json } = await enviarMensagem({ apiVersion, phoneNumberId, token, telefone });
+    if (!resposta.ok && Number(json?.error?.code) === 133010) {
+      await registrarNumero({ apiVersion, phoneNumberId, token });
+      ({ resposta, json } = await enviarMensagem({ apiVersion, phoneNumberId, token, telefone }));
+    }
     if (!resposta.ok) {
       return NextResponse.json({ ok: false, erro: json?.error?.message || `Erro da Meta (HTTP ${resposta.status}).` }, { status: 502 });
     }

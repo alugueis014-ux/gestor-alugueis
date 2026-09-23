@@ -14,12 +14,13 @@ function configuracaoMeta() {
   return { appId, appSecret, apiVersion };
 }
 
-async function trocarCodigoPorToken(code) {
+async function trocarCodigoPorToken(code, redirectUri = "") {
   const { appId, appSecret, apiVersion } = configuracaoMeta();
   const url = new URL(`https://graph.facebook.com/${apiVersion}/oauth/access_token`);
   url.searchParams.set("client_id", appId);
   url.searchParams.set("client_secret", appSecret);
   url.searchParams.set("code", code);
+  if (redirectUri) url.searchParams.set("redirect_uri", redirectUri);
 
   const resposta = await fetch(url, { cache: "no-store" });
   const json = await resposta.json().catch(() => ({}));
@@ -185,7 +186,11 @@ export async function POST(request) {
         return NextResponse.json({ ok: false, erro: "Autorização da Meta incompleta." }, { status: 400 });
       }
 
-      accessToken = await trocarCodigoPorToken(body.code);
+      const redirectUri = `${request.nextUrl.origin}/meta-whatsapp-callback`;
+      if (body?.redirectUri && body.redirectUri !== redirectUri) {
+        return NextResponse.json({ ok: false, erro: "URL de retorno da Meta inválida." }, { status: 400 });
+      }
+      accessToken = await trocarCodigoPorToken(body.code, redirectUri);
 
       // O evento FINISH do Embedded Signup pode ser bloqueado ou chegar atrasado em
       // alguns navegadores. Por isso o servidor também descobre WABA/telefone a partir

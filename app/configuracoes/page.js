@@ -270,32 +270,27 @@ export default function Configuracoes() {
     }
   }
 
-  function carregarSdkMeta() {
-    return new Promise((resolve, reject) => {
-      if (window.FB) return resolve(window.FB);
-      const existente = document.getElementById("facebook-jssdk");
-      if (existente) {
-        const limite = setTimeout(() => reject(new Error("A Meta demorou para carregar.")), 10000);
-        existente.addEventListener("load", () => { clearTimeout(limite); resolve(window.FB); }, { once: true });
-        return;
-      }
-      window.fbAsyncInit = function () {
-        window.FB.init({
-          appId: process.env.NEXT_PUBLIC_META_APP_ID,
-          autoLogAppEvents: true,
-          xfbml: true,
-          version: process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION || "v26.0"
-        });
-        resolve(window.FB);
-      };
-      const script = document.createElement("script");
-      script.id = "facebook-jssdk";
-      script.src = "https://connect.facebook.net/pt_BR/sdk.js";
-      script.async = true;
-      script.defer = true;
-      script.onerror = () => reject(new Error("Não foi possível carregar a conexão da Meta."));
-      document.body.appendChild(script);
-    });
+  function abrirCadastroIncorporadoMeta({ appId, configId, state }) {
+    const redirectUri = `${window.location.origin}/meta-whatsapp-callback`;
+    const versao = process.env.NEXT_PUBLIC_META_GRAPH_API_VERSION || "v26.0";
+    const url = new URL(`https://www.facebook.com/${versao}/dialog/oauth`);
+    url.searchParams.set("client_id", appId);
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("config_id", configId);
+    url.searchParams.set("override_default_response_type", "true");
+    url.searchParams.set("display", "popup");
+    url.searchParams.set("state", state);
+    url.searchParams.set("extras", JSON.stringify({
+      setup: {},
+      featureType: "whatsapp_business_app_onboarding",
+      sessionInfoVersion: "3",
+      version: "v4"
+    }));
+
+    const popup = window.open(url.toString(), "aluguel-facil-whatsapp-meta", "width=720,height=760,resizable=yes,scrollbars=yes");
+    if (!popup) throw new Error("O navegador bloqueou a janela da Meta. Permita pop-ups para continuar.");
+    return { popup, redirectUri };
   }
 
   async function conectarWhatsApp() {
@@ -311,8 +306,11 @@ export default function Configuracoes() {
     setConectandoWhatsapp(true);
     setMetaSessao({ wabaId: "", phoneNumberId: "" });
     try {
-      const FB = await carregarSdkMeta();
       window.__aluguelFacilMetaSessao = { wabaId: "", phoneNumberId: "" };
+
+      const state = crypto.randomUUID();
+      sessionStorage.setItem("aluguelFacilMetaState", state);
+      const { popup, redirectUri } = abrirCadastroIncorporadoMeta({ appId, configId, state });
 
       let resolverSessao;
       const promessaSessao = new Promise(resolve => { resolverSessao = resolve; });
@@ -325,31 +323,31 @@ export default function Configuracoes() {
       };
       window.addEventListener("message", receberSessaoDestaConexao);
 
-      let resposta;
-      try {
-        resposta = await new Promise(resolve => {
-          FB.login(resolve, {
-            config_id: configId,
-            response_type: "code",
-            override_default_response_type: true,
-            extras: {
-              setup: {},
-              featureType: "whatsapp_business_app_onboarding",
-              sessionInfoVersion: "3",
-              version: "v4"
-            }
-          });
-        });
-      } finally {
-        // O listener continua por alguns segundos porque o evento FINISH pode chegar
-        // logo depois do callback do FB.login.
-      }
+      const code = await new Promise((resolve, reject) => {
+        const limite = setTimeout(() => finalizar(null, new Error("A autorização da Meta demorou demais. Tente novamente.")), 10 * 60 * 1000);
+        const vigiarPopup = setInterval(() => {
+          if (popup.closed) finalizar(null, new Error("A autorização da Meta foi cancelada ou não foi concluída."));
+        }, 500);
 
-      const code = resposta?.authResponse?.code;
-      if (!code) {
-        window.removeEventListener("message", receberSessaoDestaConexao);
-        throw new Error("A autorização da Meta foi cancelada ou não foi concluída.");
-      }
+        function receberRetorno(event) {
+          if (event.origin !== window.location.origin || event.data?.type !== "ALUGUEL_FACIL_META_OAUTH") return;
+          if (event.data?.state !== state) return finalizar(null, new Error("A Meta retornou uma autorização inválida. Tente novamente."));
+          if (event.data?.error) return finalizar(null, new Error(event.data.error));
+          finalizar(event.data?.code || "");
+        }
+
+        function finalizar(valor, falha = null) {
+          clearTimeout(limite);
+          clearInterval(vigiarPopup);
+          window.removeEventListener("message", receberRetorno);
+          sessionStorage.removeItem("aluguelFacilMetaState");
+          if (falha) reject(falha);
+          else if (!valor) reject(new Error("A autorização da Meta não retornou o código esperado."));
+          else resolve(valor);
+        }
+
+        window.addEventListener("message", receberRetorno);
+      });
 
       const sessaoEvento = await Promise.race([
         promessaSessao,
@@ -363,7 +361,7 @@ export default function Configuracoes() {
 
       // Mesmo quando a Meta não entrega o evento FINISH ao navegador, o servidor
       // consegue descobrir os ativos autorizados a partir do token gerado pelo code.
-      const json = await apiWhatsapp("POST", { code, wabaId, phoneNumberId });
+      const json = await apiWhatsapp("POST", { code, wabaId, phoneNumberId, redirectUri });
       setWhatsapp(json.conexao || null);
       setMensagem("WhatsApp conectado com sucesso.");
     } catch (e) {

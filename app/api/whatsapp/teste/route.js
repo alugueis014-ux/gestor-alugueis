@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { obterUsuarioEEmpresa, normalizarTelefoneMeta } from "../../../../lib/whatsapp-server";
+import {
+  obterConexaoWhatsApp,
+  obterUsuarioEEmpresa,
+  normalizarTelefoneMeta
+} from "../../../../lib/whatsapp-server";
 
 export async function POST(request) {
   try {
@@ -18,11 +22,12 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, erro: "Informe um telefone brasileiro válido." }, { status: 400 });
     }
 
-    const token = process.env.WHATSAPP_ACCESS_TOKEN;
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const conexao = await obterConexaoWhatsApp(contexto.supabase, contexto.empresaId);
+    const token = conexao?.access_token;
+    const phoneNumberId = conexao?.phone_number_id;
     const apiVersion = process.env.META_GRAPH_API_VERSION || "v26.0";
     if (!token || !phoneNumberId) {
-      return NextResponse.json({ ok: false, erro: "Credenciais de teste do WhatsApp não configuradas." }, { status: 500 });
+      return NextResponse.json({ ok: false, erro: "A empresa ainda não conectou um WhatsApp." }, { status: 400 });
     }
 
     const resposta = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {

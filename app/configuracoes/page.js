@@ -41,6 +41,7 @@ export default function Configuracoes() {
   const [conectandoWhatsapp, setConectandoWhatsapp] = useState(false);
   const [telefoneTesteWhatsapp, setTelefoneTesteWhatsapp] = useState("");
   const [enviandoTesteWhatsapp, setEnviandoTesteWhatsapp] = useState(false);
+  const [sincronizandoTemplates, setSincronizandoTemplates] = useState(false);
   const [metaSessao, setMetaSessao] = useState({ wabaId: "", phoneNumberId: "" });
   const [abaAtiva, setAbaAtiva] = useState("empresa");
 
@@ -252,6 +253,33 @@ export default function Configuracoes() {
       setErro(e.message || "Não foi possível enviar a mensagem de teste.");
     } finally {
       setEnviandoTesteWhatsapp(false);
+    }
+  }
+
+  async function sincronizarTemplatesWhatsapp() {
+    setErro("");
+    setMensagem("");
+    setSincronizandoTemplates(true);
+    try {
+      const { data: sessao } = await supabase.auth.getSession();
+      const token = sessao?.session?.access_token;
+      if (!token) throw new Error("Sessão inválida. Entre novamente no sistema.");
+
+      const resposta = await fetch("/api/whatsapp/templates", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const json = await resposta.json().catch(() => ({}));
+      if (!resposta.ok || !json?.ok) throw new Error(json?.erro || "Não foi possível preparar os modelos padrão.");
+      setMensagem(
+        json.criados?.length
+          ? `${json.criados.length} modelo(s) padrão enviado(s) para análise da Meta.`
+          : "Os quatro modelos padrão já existem nesta conta do WhatsApp."
+      );
+    } catch (e) {
+      setErro(e.message || "Não foi possível preparar os modelos padrão.");
+    } finally {
+      setSincronizandoTemplates(false);
     }
   }
 
@@ -586,7 +614,12 @@ export default function Configuracoes() {
                             <div><b>✓</b><span><strong>Pagamento confirmado</strong><small>Confirmação após registrar a baixa</small></span></div>
                           </div>
                         </div>
-                        <div className="content-actions left"><button type="button" className="danger whatsapp-disconnect" onClick={desconectarWhatsApp} disabled={conectandoWhatsapp}>{conectandoWhatsapp ? "Desconectando..." : "Desconectar WhatsApp"}</button></div>
+                        <div className="content-actions left">
+                          <button type="button" className="secondary" onClick={sincronizarTemplatesWhatsapp} disabled={sincronizandoTemplates}>
+                            {sincronizandoTemplates ? "Preparando modelos..." : "Preparar modelos padrão"}
+                          </button>
+                          <button type="button" className="danger whatsapp-disconnect" onClick={desconectarWhatsApp} disabled={conectandoWhatsapp}>{conectandoWhatsapp ? "Desconectando..." : "Desconectar WhatsApp"}</button>
+                        </div>
                       </>
                     ) : (
                       <div className="connection-card empty">

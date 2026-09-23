@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { obterUsuarioEEmpresa } from "../../../../lib/whatsapp-server";
+import { garantirTemplatesWhatsAppPadrao } from "../../../../lib/whatsapp-templates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -229,6 +230,20 @@ export async function POST(request) {
     await registrarNumero(phoneNumberId, accessToken);
     await assinarWebhookDaWaba(wabaId, accessToken);
 
+    // Cada empresa possui a própria WABA. Copia os quatro modelos oficiais do
+    // Aluguel Fácil para a conta recém-conectada, sem duplicar os já existentes.
+    let templates = null;
+    try {
+      templates = await garantirTemplatesWhatsAppPadrao({
+        wabaId,
+        accessToken,
+        apiVersion: configuracaoMeta().apiVersion
+      });
+    } catch (e) {
+      // Uma falha de análise/criação de modelo não deve desfazer a conexão.
+      templates = { erro: e?.message || "Não foi possível criar os modelos padrão." };
+    }
+
     const agora = new Date().toISOString();
     const { error } = await contexto.supabase
       .from("whatsapp_conexoes")
@@ -249,6 +264,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       ok: true,
+      templates,
       conexao: {
         empresa_id: contexto.empresaId,
         waba_id: wabaId,

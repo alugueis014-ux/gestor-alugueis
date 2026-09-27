@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
-import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao, vencimentoDaCompetencia } from "../../lib/sincronizacao";
+import { assinarAtualizacoes, dataLocalISO, normalizarTransferenciasRecebimentos, notificarAtualizacao, vencimentoDaCompetencia } from "../../lib/sincronizacao";
 import { abrirWhatsApp } from "../../lib/whatsapp";
 import { notificarPagamentoWhatsApp } from "../../lib/whatsapp-client";
 
@@ -28,7 +28,7 @@ function moeda(valor) {
   return Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function hojeISO() { return new Date().toISOString().slice(0, 10); }
+function hojeISO() { return dataLocalISO(); }
 
 function statusReal(r) {
   const previsto = Number(r.valor_previsto || 0);
@@ -310,6 +310,7 @@ export default function Acompanhamento() {
 
     setSalvandoReceber(true);
     setErro("");
+    let avisoWhatsApp = "";
 
     try {
       const totalDevido =
@@ -334,13 +335,16 @@ export default function Acompanhamento() {
       if (error) throw error;
 
       if (novoValorRecebido >= totalDevido) {
-        notificarPagamentoWhatsApp(modalReceber.id).catch(err =>
-          console.warn("WhatsApp pagamento:", err?.message || err)
-        );
+        try {
+          await notificarPagamentoWhatsApp(modalReceber.id);
+        } catch (whatsappError) {
+          avisoWhatsApp = `Pagamento registrado, mas a mensagem não foi enviada: ${whatsappError.message}`;
+        }
       }
 
       setModalReceber(null);
       await carregarRecebimentos();
+      if (avisoWhatsApp) setErro(avisoWhatsApp);
     } catch (e) {
       setErro(e.message || "Não foi possível registrar o pagamento.");
     } finally {

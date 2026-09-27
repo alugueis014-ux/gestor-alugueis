@@ -25,6 +25,7 @@ export async function POST(request) {
     const { empresaId, supabase } = contexto;
     const corpo = await request.json().catch(() => ({}));
     const recebimentoId = corpo?.recebimentoId;
+    const forcarReenvio = corpo?.forcarReenvio === true;
     if (!recebimentoId) {
       return NextResponse.json({ ok: false, erro: "Recebimento não informado." }, { status: 400 });
     }
@@ -40,6 +41,7 @@ export async function POST(request) {
         data_pagamento,
         valor_recebido,
         status,
+        atualizado_em,
         contratos(
           id,
           inquilinos(id,nome,telefone),
@@ -70,11 +72,34 @@ export async function POST(request) {
       .eq("marco_dias", 0)
       .eq("data_referencia", dataReferencia)
       .eq("status", "enviado")
+      .gte("criado_em", r.atualizado_em)
       .maybeSingle();
 
-    if (existente) {
+    if (existente && !forcarReenvio) {
       return NextResponse.json({ ok: true, ignorado: true, motivo: "Confirmação já enviada." });
     }
+
+    // Se o pagamento foi estornado e registrado novamente na mesma data,
+    // invalida a confirmação antiga para liberar um novo envio.
+    let invalidarConfirmacoes = supabase
+      .from("whatsapp_disparos")
+      .update({
+        status: "cancelado",
+        erro: "Confirmação substituída após novo registro do pagamento."
+      })
+      .eq("recebimento_id", r.id)
+      .eq("tipo", "pagamento")
+      .eq("marco_dias", 0)
+      .eq("data_referencia", dataReferencia)
+      .eq("status", "enviado");
+
+    if (!forcarReenvio) {
+      invalidarConfirmacoes = invalidarConfirmacoes.lt("criado_em", r.atualizado_em);
+    }
+
+    const { error: invalidarError } = await invalidarConfirmacoes;
+
+    if (invalidarError) throw invalidarError;
 
     try {
       const envio = await enviarTemplateWhatsApp({

@@ -9,7 +9,7 @@ import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import Icon from "../../components/Icon";
 import { obterEmpresaId } from "../../lib/empresa";
-import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
+import { assinarAtualizacoes, dataLocalISO, normalizarTransferenciasRecebimentos, notificarAtualizacao } from "../../lib/sincronizacao";
 import { notificarPagamentoWhatsApp } from "../../lib/whatsapp-client";
 
 const dinheiro = valor => Number(valor || 0).toLocaleString("pt-BR", {
@@ -76,7 +76,7 @@ export default function Dashboard() {
 
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
-      const hojeIso = hoje.toISOString().slice(0, 10);
+      const hojeIso = dataLocalISO(hoje);
 
       const [p, a, i, r, atraso] = await Promise.all([
         supabase
@@ -175,6 +175,8 @@ export default function Dashboard() {
           `)
           .eq("empresa_id", empresaId)
           .eq("contratos.empresa_id", empresaId)
+          .eq("contratos.status", "ativo")
+          .eq("competencia", `${mes}-01`)
           .lt("data_vencimento", hojeIso)
           .neq("status", "pago")
           .neq("status", "cancelado")
@@ -377,9 +379,7 @@ export default function Dashboard() {
   }
 
   function hojeISO() {
-    const d = new Date();
-    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-    return local.toISOString().slice(0, 10);
+    return dataLocalISO();
   }
 
   function extrairNomeDoComando(frase) {
@@ -555,9 +555,12 @@ export default function Dashboard() {
       return;
     }
 
-    notificarPagamentoWhatsApp(modalRecebimento.id).catch(err =>
-      console.warn("WhatsApp pagamento:", err?.message || err)
-    );
+    let avisoWhatsApp = "";
+    try {
+      await notificarPagamentoWhatsApp(modalRecebimento.id);
+    } catch (whatsappError) {
+      avisoWhatsApp = `Pagamento registrado, mas a mensagem não foi enviada: ${whatsappError.message}`;
+    }
 
     setModalRecebimento(null);
     setFormaPagamentoRapido("pix");
@@ -565,6 +568,7 @@ export default function Dashboard() {
     setCandidatosRecebimento([]);
     setComandoRecebimento("");
     await carregar();
+    if (avisoWhatsApp) setErro(avisoWhatsApp);
   }
 
   function alternarPredio(predioId) {

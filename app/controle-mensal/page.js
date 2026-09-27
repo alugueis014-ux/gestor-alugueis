@@ -124,7 +124,6 @@ export default function ControleMensal() {
       const fim = c.data_fim?.slice(0, 7);
 
       return (
-        c.status !== "cancelado" &&
         (!inicio || inicio <= mes) &&
         (!fim || fim >= mes)
       );

@@ -6,8 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
-import { assinarAtualizacoes, notificarAtualizacao } from "../../lib/sincronizacao";
-import { garantirCobrancaMesAtual, migrarRecebimentoTransferencia, sincronizarEncerramentoContrato, sincronizarValorContratoAberto } from "../../lib/sincronizacao";
+import { assinarAtualizacoes, dataLocalISO, garantirCobrancaMesAtual, migrarRecebimentoTransferencia, notificarAtualizacao, sincronizarEncerramentoContrato, sincronizarValorContratoAberto } from "../../lib/sincronizacao";
 import { abrirWhatsApp } from "../../lib/whatsapp";
 
 const formularioVazio = {
@@ -51,7 +50,7 @@ export default function Inquilinos() {
     apartamento_id: "",
     valor_aluguel: "",
     dia_vencimento: "",
-    data_transferencia: new Date().toISOString().slice(0, 10)
+    data_transferencia: dataLocalISO()
   });
 
   useEffect(() => { iniciar(); }, []);
@@ -249,7 +248,7 @@ export default function Inquilinos() {
       apartamento_id: "",
       valor_aluguel: String(contratoAtivo.valor_aluguel ?? ""),
       dia_vencimento: String(contratoAtivo.dia_vencimento ?? ""),
-      data_transferencia: new Date().toISOString().slice(0, 10)
+      data_transferencia: dataLocalISO()
     });
   }
 
@@ -410,7 +409,7 @@ export default function Inquilinos() {
     const recebido = Number(item.valor_recebido || 0);
     if (item.status === "pago" || (previsto > 0 && recebido >= previsto)) return "Pago";
     if (recebido > 0) return "Parcial";
-    return new Date().toISOString().slice(0, 10) > item.data_vencimento ? "Atrasado" : "Pendente";
+    return dataLocalISO() > item.data_vencimento ? "Atrasado" : "Pendente";
   }
 
   async function abrirHistoricoPagamentos(inquilino) {
@@ -504,7 +503,7 @@ export default function Inquilinos() {
       telefone: inquilino.telefone || "",
       email: inquilino.email || "",
       observacoes: inquilino.observacoes || "",
-      data_inicio: new Date().toISOString().slice(0, 10),
+      data_inicio: dataLocalISO(),
       status: "ativo"
     });
     setArquivo(null);
@@ -601,7 +600,7 @@ export default function Inquilinos() {
       if (dadosContratoCompletos) {
         const dataFimEncerramento =
           form.status === "inativo"
-            ? form.data_saida || form.data_fim || new Date().toISOString().slice(0, 10)
+            ? form.data_saida || form.data_fim || dataLocalISO()
             : form.data_fim || null;
 
         const dadosContrato = {
@@ -681,7 +680,7 @@ export default function Inquilinos() {
           .eq("empresa_id", idEmpresa);
       } else if (contratoEditandoId && form.status === "inativo") {
         const dataFimEncerramento =
-          form.data_saida || form.data_fim || new Date().toISOString().slice(0, 10);
+          form.data_saida || form.data_fim || dataLocalISO();
 
         const { error: encerrarError } = await supabase
           .from("contratos")
@@ -835,7 +834,7 @@ export default function Inquilinos() {
     const ultimoContratoEncerrado = [...(inquilino.contratos || [])]
       .filter(c => c.status === "encerrado")
       .sort((a, b) => String(b.data_inicio || "").localeCompare(String(a.data_inicio || "")))[0];
-    const dataSaida = new Date().toISOString().slice(0, 10);
+    const dataSaida = dataLocalISO();
 
     setErro("");
 
@@ -871,23 +870,14 @@ export default function Inquilinos() {
           .eq("empresa_id", idEmpresa);
         if (reabrirError) throw reabrirError;
 
-        const hoje = new Date().toISOString().slice(0, 10);
-        const { error: atrasadosError } = await supabase
-          .from("recebimentos")
-          .update({ status: "atrasado", atualizado_em: new Date().toISOString() })
-          .eq("empresa_id", idEmpresa)
-          .eq("contrato_id", ultimoContratoEncerrado.id)
-          .eq("status", "cancelado")
-          .lt("data_vencimento", hoje);
-        if (atrasadosError) throw atrasadosError;
-
+        // Toda cobrança reaberta permanece "pendente" no banco. A interface
+        // mostra "Atrasado" automaticamente quando o vencimento já passou.
         const { error: pendentesError } = await supabase
           .from("recebimentos")
           .update({ status: "pendente", atualizado_em: new Date().toISOString() })
           .eq("empresa_id", idEmpresa)
           .eq("contrato_id", ultimoContratoEncerrado.id)
-          .eq("status", "cancelado")
-          .gte("data_vencimento", hoje);
+          .eq("status", "cancelado");
         if (pendentesError) throw pendentesError;
 
         const { error: apartamentoError } = await supabase

@@ -7,7 +7,7 @@ import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { obterEmpresaId } from "../../lib/empresa";
-import { assinarAtualizacoes, normalizarTransferenciasRecebimentos, notificarAtualizacao, vencimentoDaCompetencia } from "../../lib/sincronizacao";
+import { assinarAtualizacoes, dataLocalISO, normalizarTransferenciasRecebimentos, notificarAtualizacao, vencimentoDaCompetencia } from "../../lib/sincronizacao";
 import { notificarPagamentoWhatsApp } from "../../lib/whatsapp-client";
 
 
@@ -19,7 +19,7 @@ function moeda(valor) {
 }
 
 function hojeISO() {
-  return new Date().toISOString().slice(0, 10);
+  return dataLocalISO();
 }
 
 function statusExibido(recebimento) {
@@ -332,6 +332,7 @@ export default function Recebimentos() {
         .eq("empresa_id", empresaId)
         .eq("contratos.empresa_id", empresaId)
         .eq("competencia", `${mes}-01`)
+        .neq("status", "cancelado")
         .order("data_vencimento");
 
       if (error) throw error;
@@ -741,6 +742,7 @@ export default function Recebimentos() {
 
     setSalvandoReceber(true);
     setErro("");
+    let avisoWhatsApp = "";
 
     try {
       const { error } = await supabase
@@ -757,13 +759,16 @@ export default function Recebimentos() {
       if (error) throw error;
 
       if (novoValorRecebido >= totalDevido) {
-        notificarPagamentoWhatsApp(modalReceber.id).catch(err =>
-          console.warn("WhatsApp pagamento:", err?.message || err)
-        );
+        try {
+          await notificarPagamentoWhatsApp(modalReceber.id);
+        } catch (whatsappError) {
+          avisoWhatsApp = `Pagamento registrado, mas a mensagem não foi enviada: ${whatsappError.message}`;
+        }
       }
 
       setModalReceber(null);
       await carregar();
+      if (avisoWhatsApp) setErro(avisoWhatsApp);
     } catch (e) {
       setErro(e.message || "Não foi possível registrar o pagamento.");
     } finally {
@@ -825,37 +830,54 @@ export default function Recebimentos() {
 
     if (error) return setErro(error.message);
 
+    let avisoWhatsApp = "";
     if (pago && modal?.status !== "pago") {
-      notificarPagamentoWhatsApp(modal.id).catch(err =>
-        console.warn("WhatsApp pagamento:", err?.message || err)
-      );
+      try {
+        await notificarPagamentoWhatsApp(modal.id);
+      } catch (whatsappError) {
+        avisoWhatsApp = `Pagamento registrado, mas a mensagem não foi enviada: ${whatsappError.message}`;
+      }
     }
 
     setModal(null);
     await carregar();
+    if (avisoWhatsApp) setErro(avisoWhatsApp);
   }
 
   async function estornar(r) {
-    if (!confirm(`Estornar o recebimento de ${r.inquilino?.nome || "inquilino"}?`)) {
+    if (!confirm(`Estornar o recebimento de ${r.inquilino?.nome || "inquilino"}? A cobrança voltará automaticamente como pendente ou atrasada.`)) {
       return;
     }
 
-    const { error } = await supabase
-      .from("recebimentos")
-      .update({
-        valor_recebido: 0,
-        data_pagamento: null,
-        forma_pagamento: null,
-        multa: 0,
-        juros: 0,
-        desconto: 0,
-        status: "pendente",
-        atualizado_em: new Date().toISOString()
-      })
-      .eq("id", r.id);
+    setErro("");
+    const { data: recebimentoId, error } = await supabase.rpc(
+      "estornar_recebimento_automatico",
+      { p_recebimento_id: r.id }
+    );
 
     if (error) return setErro(error.message);
+    notificarAtualizacao("recebimentos", {
+      recebimentoId,
+      competencia: r.competencia,
+      acao: "estorno"
+    });
     await carregar();
+  }
+
+  async function reenviarConfirmacaoWhatsApp(r) {
+    setErro("");
+    try {
+      const resultado = await notificarPagamentoWhatsApp(r.id, {
+        forcarReenvio: true
+      });
+      if (resultado?.enviado) {
+        alert("Confirmação de pagamento enviada pelo WhatsApp.");
+      } else {
+        setErro(resultado?.motivo || "A confirmação não foi enviada.");
+      }
+    } catch (e) {
+      setErro(`Não foi possível enviar a confirmação: ${e.message}`);
+    }
   }
 
   async function excluirTodos() {
@@ -1133,7 +1155,16 @@ export default function Recebimentos() {
                                   Receber
                                 </button>
                               )}
-                              <button className="secondary" onClick={() => estornar(r)}>Estornar</button>
+                              {r.statusTela === "Pago" && (
+                                <button className="secondary" onClick={() => estornar(r)}>
+                                  Estornar
+                                </button>
+                              )}
+                              {r.statusTela === "Pago" && (
+                                <button className="secondary" onClick={() => reenviarConfirmacaoWhatsApp(r)}>
+                                  Enviar WhatsApp
+                                </button>
+                              )}
                               <button className="secondary" onClick={() => recibo(r)}>Recibo</button>
                               <button className="danger" onClick={() => excluir(r)}>Excluir</button>
                             </div>

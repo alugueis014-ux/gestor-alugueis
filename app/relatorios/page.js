@@ -7,7 +7,7 @@ import AppShell from "../../components/AppShell";
 import AuthGuard from "../../components/AuthGuard";
 import { supabase } from "../../lib/supabase";
 import { obterEmpresaId } from "../../lib/empresa";
-import { assinarAtualizacoes, normalizarTransferenciasRecebimentos } from "../../lib/sincronizacao";
+import { assinarAtualizacoes, dataLocalISO, normalizarTransferenciasRecebimentos } from "../../lib/sincronizacao";
 
 const meses = [
   ["01", "Janeiro"], ["02", "Fevereiro"], ["03", "Março"], ["04", "Abril"],
@@ -70,7 +70,7 @@ function estaCancelado(r) {
 
 function estaAtrasado(r) {
   if (estaPago(r) || estaCancelado(r) || !r.data_vencimento) return false;
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = dataLocalISO();
   return r.data_vencimento < hoje;
 }
 

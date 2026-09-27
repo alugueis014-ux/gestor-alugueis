@@ -126,7 +126,7 @@ export default function Inquilinos() {
           .order("nome"),
         supabase
           .from("apartamentos")
-          .select("id,predio_id,numero,situacao,predios(nome,endereco)")
+          .select("id,predio_id,numero,situacao,predios(nome,endereco,arquivado),contratos(id,status)")
           .eq("empresa_id", id)
           .order("numero")
       ]);
@@ -230,9 +230,24 @@ export default function Inquilinos() {
     return apartamentos.filter(
       a =>
         a.predio_id === formTransferencia.predio_id &&
-        a.situacao !== "ocupado"
+        a.situacao === "disponivel" &&
+        a.predios?.arquivado !== true &&
+        a.id !== modalTransferencia?.contrato?.apartamento_id &&
+        !(a.contratos || []).some(c => c.status === "ativo")
     );
-  }, [apartamentos, formTransferencia.predio_id]);
+  }, [apartamentos, formTransferencia.predio_id, modalTransferencia]);
+
+  const prediosDisponiveisTransferencia = useMemo(() => {
+    return predios.filter(predio =>
+      apartamentos.some(a =>
+        a.predio_id === predio.id &&
+        a.situacao === "disponivel" &&
+        a.predios?.arquivado !== true &&
+        a.id !== modalTransferencia?.contrato?.apartamento_id &&
+        !(a.contratos || []).some(c => c.status === "ativo")
+      )
+    );
+  }, [predios, apartamentos, modalTransferencia]);
 
   function abrirTransferencia(inquilino) {
     const contratoAtivo = (inquilino.contratos || []).find(c => c.status === "ativo");
@@ -285,14 +300,21 @@ export default function Inquilinos() {
       // Confere novamente se o destino continua disponível.
       const { data: destino, error: destinoError } = await supabase
         .from("apartamentos")
-        .select("id,situacao")
+        .select("id,situacao,predios(arquivado),contratos(id,status)")
         .eq("id", formTransferencia.apartamento_id)
         .eq("empresa_id", idEmpresa)
         .single();
 
       if (destinoError) throw destinoError;
-      if (destino.situacao === "ocupado") {
-        throw new Error("O apartamento escolhido acabou de ser ocupado. Selecione outro.");
+      const possuiContratoAtivo = (destino.contratos || []).some(
+        c => c.status === "ativo"
+      );
+      if (
+        destino.situacao !== "disponivel" ||
+        destino.predios?.arquivado === true ||
+        possuiContratoAtivo
+      ) {
+        throw new Error("O apartamento escolhido não está mais disponível. Selecione outro.");
       }
 
       // Encerra o contrato antigo preservando todo o histórico.
@@ -1276,8 +1298,12 @@ export default function Inquilinos() {
                       }
                       required
                     >
-                      <option value="">Selecione</option>
-                      {predios.map(p => (
+                      <option value="">
+                        {prediosDisponiveisTransferencia.length
+                          ? "Selecione"
+                          : "Nenhum imóvel com apartamento disponível"}
+                      </option>
+                      {prediosDisponiveisTransferencia.map(p => (
                         <option key={p.id} value={p.id}>
                           {p.nome}{p.endereco ? ` — ${p.endereco}` : ""}
                         </option>

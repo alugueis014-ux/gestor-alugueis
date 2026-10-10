@@ -283,9 +283,16 @@ export default function Acompanhamento() {
     );
   }, [linhas]);
 
-  const pagos = linhasBase.filter(x => x.statusExibido === "Pago").length;
-  const pendentes = linhasBase.filter(x => x.statusExibido === "Pendente").length;
-  const atrasados = linhasBase.filter(x => x.statusExibido === "Atrasado").length;
+  // No modo acumulado, a tabela precisa trazer dívidas de meses anteriores,
+  // mas os indicadores mensais não podem somar a mesma unidade várias vezes.
+  const linhasMesSelecionado = linhasBase.filter(
+    x => String(x.competencia || "").slice(0, 7) === mes
+  );
+  const totalApartamentos = linhasMesSelecionado.length;
+  const pagos = linhasMesSelecionado.filter(x => x.statusExibido === "Pago").length;
+  const pendentes = linhasMesSelecionado.filter(x => x.statusExibido === "Pendente").length;
+  const atrasados = (acumulado ? linhasBase : linhasMesSelecionado)
+    .filter(x => x.statusExibido === "Atrasado").length;
 
   function filtrarPorCard(novoStatus) {
     setStatus(novoStatus);
@@ -421,7 +428,7 @@ export default function Acompanhamento() {
         onClick={() => filtrarPorCard("")}
       >
         <span>Total de apartamentos</span>
-        <strong>{linhasBase.length}</strong>
+        <strong>{totalApartamentos}</strong>
       </button>
       <button
         type="button"

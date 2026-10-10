@@ -415,7 +415,7 @@ export default function Acompanhamento() {
   }
 
   return <AuthGuard><AppShell>
-    <div className="tracking-header"><h2>Acompanhamento de Aluguéis</h2><input type="month" value={mes} onChange={e=>setMes(e.target.value)} /></div>
+    <div className="tracking-header"><h2>Acompanhamento de Aluguéis</h2><input type="month" value={mes} onClick={e=>e.currentTarget.showPicker?.()} onChange={e=>setMes(e.target.value)} /></div>
     <div className="tracking-filters">
       <select value={predio} onChange={e=>setPredio(e.target.value)}><option value="">Todos os imóveis</option>{predios.map(p=><option key={p.id} value={p.id}>{p.nome}{p.endereco ? ` — ${p.endereco}` : ""}</option>)}</select>
       <select value={status} onChange={e=>setStatus(e.target.value)}><option value="">Todos os status</option><option>Pago</option><option>Pendente</option><option>Atrasado</option></select>

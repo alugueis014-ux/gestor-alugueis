@@ -656,6 +656,7 @@ export default function ControleMensal() {
               <input
                 type="month"
                 value={mes}
+                onClick={(e) => e.currentTarget.showPicker?.()}
                 onChange={(e) => setMes(e.target.value)}
               />
             </label>

@@ -182,6 +182,7 @@ export default function Recebimentos() {
   const [textoVoz, setTextoVoz] = useState("");
   const [modalVoz, setModalVoz] = useState(null);
   const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [enviandoWhatsappId, setEnviandoWhatsappId] = useState(null);
   const [form, setForm] = useState({
     valor_previsto: "",
     valor_recebido: "",
@@ -866,17 +867,24 @@ export default function Recebimentos() {
 
   async function reenviarConfirmacaoWhatsApp(r) {
     setErro("");
+    setEnviandoWhatsappId(r.id);
     try {
       const resultado = await notificarPagamentoWhatsApp(r.id, {
         forcarReenvio: true
       });
-      if (resultado?.enviado) {
-        alert("Confirmação de pagamento enviada pelo WhatsApp.");
+      if (resultado?.aceito) {
+        alert(resultado.mensagem || "A Meta aceitou a mensagem e processará a entrega.");
       } else {
-        setErro(resultado?.motivo || "A confirmação não foi enviada.");
+        const mensagem = resultado?.motivo || "A confirmação não foi enviada.";
+        setErro(mensagem);
+        alert(mensagem);
       }
     } catch (e) {
-      setErro(`Não foi possível enviar a confirmação: ${e.message}`);
+      const mensagem = `Não foi possível enviar a confirmação: ${e.message}`;
+      setErro(mensagem);
+      alert(mensagem);
+    } finally {
+      setEnviandoWhatsappId(null);
     }
   }
 
@@ -1035,6 +1043,7 @@ export default function Recebimentos() {
             <input
               type="month"
               value={mes}
+              onClick={e => e.currentTarget.showPicker?.()}
               onChange={e => setMes(e.target.value)}
             />
             <button
@@ -1161,8 +1170,13 @@ export default function Recebimentos() {
                                 </button>
                               )}
                               {r.statusTela === "Pago" && (
-                                <button className="secondary" onClick={() => reenviarConfirmacaoWhatsApp(r)}>
-                                  Enviar WhatsApp
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  disabled={enviandoWhatsappId === r.id}
+                                  onClick={() => reenviarConfirmacaoWhatsApp(r)}
+                                >
+                                  {enviandoWhatsappId === r.id ? "Enviando..." : "Enviar WhatsApp"}
                                 </button>
                               )}
                               <button className="secondary" onClick={() => recibo(r)}>Recibo</button>

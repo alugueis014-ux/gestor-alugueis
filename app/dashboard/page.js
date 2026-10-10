@@ -601,7 +601,7 @@ export default function Dashboard() {
               <Icon name={ocultarInformacoes ? "eyeOff" : "eye"} size={18} />
               <span>{ocultarInformacoes ? "Mostrar" : "Ocultar"}</span>
             </button>
-            <input type="month" className="month-picker" value={mes} onChange={e => setMes(e.target.value)} />
+            <input type="month" className="month-picker" value={mes} onClick={e => e.currentTarget.showPicker?.()} onChange={e => setMes(e.target.value)} />
           </div>
         </div>
 

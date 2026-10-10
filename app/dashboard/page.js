@@ -176,7 +176,9 @@ export default function Dashboard() {
           .eq("empresa_id", empresaId)
           .eq("contratos.empresa_id", empresaId)
           .eq("contratos.status", "ativo")
-          .eq("competencia", `${mes}-01`)
+          // O alerta deve considerar toda a dívida acumulada até o mês
+          // selecionado, e não apenas as cobranças daquela competência.
+          .lte("competencia", `${mes}-01`)
           .lt("data_vencimento", hojeIso)
           .neq("status", "pago")
           .neq("status", "cancelado")

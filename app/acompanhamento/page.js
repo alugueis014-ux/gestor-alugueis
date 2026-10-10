@@ -53,6 +53,7 @@ export default function Acompanhamento() {
   const [recebimentos, setRecebimentos] = useState([]);
   const [predio, setPredio] = useState("");
   const [status, setStatus] = useState("");
+  const [acumulado, setAcumulado] = useState(false);
   const [busca, setBusca] = useState("");
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(true);
@@ -65,13 +66,23 @@ export default function Acompanhamento() {
     forma_pagamento: "pix"
   });
 
-  useEffect(() => { carregarMesSelecionado(); }, [mes]);
+  useEffect(() => {
+    const parametros = new URLSearchParams(window.location.search);
+    const mesUrl = parametros.get("mes");
+    const statusUrl = parametros.get("status");
+
+    if (/^\d{4}-\d{2}$/.test(mesUrl || "")) setMes(mesUrl);
+    if (["Pago", "Pendente", "Atrasado"].includes(statusUrl)) setStatus(statusUrl);
+    setAcumulado(parametros.get("acumulado") === "1");
+  }, []);
+
+  useEffect(() => { carregarMesSelecionado(); }, [mes, acumulado]);
 
   useEffect(() => {
     return assinarAtualizacoes(() => {
       carregarMesSelecionado();
     });
-  }, [mes]);
+  }, [mes, acumulado]);
 
   async function carregarMesSelecionado() {
     const hoje = new Date();
@@ -148,7 +159,7 @@ export default function Acompanhamento() {
     try {
       const empresaId = await obterEmpresaId();
 
-      const { data, error } = await supabase
+      let consulta = supabase
         .from("recebimentos")
         .select(`
           *,
@@ -168,9 +179,13 @@ export default function Acompanhamento() {
         .eq("empresa_id", empresaId)
         .eq("contratos.empresa_id", empresaId)
         .eq("contratos.status", "ativo")
-        .eq("competencia", competencia)
-        .neq("status", "cancelado")
-        .order("data_vencimento");
+        .neq("status", "cancelado");
+
+      consulta = acumulado
+        ? consulta.lte("competencia", competencia)
+        : consulta.eq("competencia", competencia);
+
+      const { data, error } = await consulta.order("data_vencimento");
 
       if (error) throw error;
 
@@ -435,7 +450,7 @@ export default function Acompanhamento() {
     </div>
     {erro&&<div className="error">{erro}</div>}
     {carregando&&<div className="tracking-table-wrap"><div className="empty-row">Carregando...</div></div>}
-    {!carregando&&linhas.length===0&&<div className="tracking-table-wrap"><div className="empty-row">Nenhum aluguel encontrado para este mês.</div></div>}
+    {!carregando&&linhas.length===0&&<div className="tracking-table-wrap"><div className="empty-row">{acumulado ? "Nenhum aluguel atrasado acumulado encontrado." : "Nenhum aluguel encontrado para este mês."}</div></div>}
     {!carregando&&linhas.length>0&&<div className="tracking-buildings">
       {grupos.map(grupo=><section className="tracking-building" key={grupo.id}>
         <div className="tracking-building-head">

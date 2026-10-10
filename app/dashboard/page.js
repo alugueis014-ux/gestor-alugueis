@@ -708,7 +708,7 @@ export default function Dashboard() {
         </div>
 
         <a
-          href="/acompanhamento"
+          href={`/acompanhamento?status=Atrasado&acumulado=1&mes=${mes}`}
           style={{
             display: "block",
             margin: "18px 0",
